@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class AuthController extends Controller
 {
@@ -44,13 +45,9 @@ class AuthController extends Controller
             $request->session()->regenerateToken();
         }
 
-        $isSecure = $request->secure() || config('app.env') === 'production' || str_starts_with((string) config('app.url'), 'https://');
-        $sameSite = $isSecure ? 'None' : 'Lax';
-        $cookie = cookie('access_token', '', -1, '/', null, $isSecure, true, false, $sameSite);
-
         return response()->json([
             'success' => true,
             'message' => 'تم تسجيل الخروج بنجاح',
-        ])->withCookie($cookie);
+        ]);
     }
 }

@@ -9,17 +9,10 @@ class AuthenticateFromCookie
 {
     /**
      * Handle an incoming request.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \Closure  $next
-     * @return mixed
+     * @deprecated Cookie auth disabled in favor of Bearer Token in Authorization header.
      */
     public function handle(Request $request, Closure $next)
     {
-        if (! $request->hasHeader('Authorization') && $token = $request->cookie('access_token')) {
-            $request->headers->set('Authorization', 'Bearer ' . $token);
-        }
-
         return $next($request);
     }
 }

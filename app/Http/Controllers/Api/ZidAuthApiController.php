@@ -50,26 +50,11 @@ class ZidAuthApiController extends Controller
 
             Auth::login($user, true);
 
-            // إذا كانت المصادقة بدأت من الفرونت إند الـ SPA -> وجهه للفرونت إند مع إرفاق الكوكي الآمنة
+            // إذا كانت المصادقة بدأت من الفرونت إند الـ SPA -> وجهه للفرونت إند مع إرفاق التوكن في الـ URL
             if ($isSpa) {
                 $token = $user->createToken('spa_api_token')->plainTextToken;
 
-                $isSecure = $request->secure() || config('app.env') === 'production' || str_starts_with((string) config('app.url'), 'https://');
-                $sameSite = $isSecure ? 'None' : 'Lax';
-
-                $cookie = cookie(
-                    'access_token',
-                    $token,
-                    60 * 24 * 7,
-                    '/',
-                    null,
-                    $isSecure,
-                    true,
-                    false,
-                    $sameSite
-                );
-
-                return redirect($frontendUrl.'/auth/callback')->withCookie($cookie);
+                return redirect($frontendUrl.'/auth/callback?token='.urlencode($token));
             }
 
             // إذا كانت المصادقة من ويب الباك إند المباشر -> وجهه لـ /dashboard الباك إند
