@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\OAuthController;
+use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProfileController;
 use Illuminate\Support\Facades\Route;
 
@@ -35,4 +36,10 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function () {
     // 👤 Merchant User Live Profile Endpoints
     Route::get('/user/profile', [ProfileController::class, 'user'])->name('api.user.profile');
     Route::get('/merchant/profile', [ProfileController::class, 'user'])->name('api.merchant.profile');
+
+    // 📦 Products Live Endpoints
+    Route::get('/products', [ProductController::class, 'index'])->name('api.products.index');
+    Route::get('/products/{id}', [ProductController::class, 'show'])->name('api.products.show');
+    Route::put('/products/{id}', [ProductController::class, 'update'])->name('api.products.update');
+    Route::delete('/products/{id}', [ProductController::class, 'destroy'])->name('api.products.destroy');
 });

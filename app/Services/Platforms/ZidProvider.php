@@ -3,6 +3,7 @@
 namespace App\Services\Platforms;
 
 use App\Contracts\PlatformProvider;
+use App\Data\Products\ProductData;
 use App\Data\StoreProfileData;
 use App\Data\UserProfileData;
 use App\Models\OauthToken;
@@ -197,6 +198,79 @@ class ZidProvider implements PlatformProvider
             $localizationData,
             $businessData
         );
+    }
+
+    /**
+     * جلب قائمة المنتجات الحية من API زد وتغليفها في مصفوفة ProductData DTOs
+     *
+     * @return ProductData[]
+     */
+    public function getProducts(OauthToken $oauthToken): array
+    {
+        $response = $this->apiClient($oauthToken)->get('/products/');
+
+        if (! $response->successful()) {
+            if ($response->status() === 404) {
+                return [];
+            }
+            throw new RuntimeException('فشل جلب قائمة المنتجات من منصة زد');
+        }
+
+        $items = $response->json('results') ?? ($response->json('products') ?? ($response->json('data') ?? []));
+        $products = [];
+
+        foreach ($items as $item) {
+            $products[] = ProductData::fromZid($item);
+        }
+
+        return $products;
+    }
+
+    /**
+     * جلب بيانات منتج محدد حية من API زد وتغليفها في ProductData DTO
+     */
+    public function getProduct(OauthToken $oauthToken, string $productId): ProductData
+    {
+        $response = $this->apiClient($oauthToken)->get("/products/{$productId}/");
+
+        if (! $response->successful()) {
+            throw new RuntimeException("فشل جلب بيانات المنتج [{$productId}] من منصة زد");
+        }
+
+        $rawProduct = $response->json('product') ?? ($response->json('data') ?? $response->json());
+
+        return ProductData::fromZid($rawProduct);
+    }
+
+    /**
+     * تحديث بيانات المنتج في منصة زد
+     */
+    public function updateProduct(OauthToken $oauthToken, string $productId, array $data): ProductData
+    {
+        $response = $this->apiClient($oauthToken)->patch("/products/{$productId}/", $data);
+
+        if (! $response->successful()) {
+            $errMsg = $response->json('message') ?? "فشل تحديث المنتج رقم [{$productId}] في منصة زد";
+            throw new RuntimeException(is_array($errMsg) ? json_encode($errMsg) : $errMsg);
+        }
+
+        $rawProduct = $response->json('product') ?? ($response->json('data') ?? $response->json());
+
+        return ProductData::fromZid($rawProduct);
+    }
+
+    /**
+     * حذف المنتج من منصة زد
+     */
+    public function deleteProduct(OauthToken $oauthToken, string $productId): bool
+    {
+        $response = $this->apiClient($oauthToken)->delete("/products/{$productId}/");
+
+        if (! $response->successful()) {
+            throw new RuntimeException("فشل حذف المنتج رقم [{$productId}] من منصة زد");
+        }
+
+        return true;
     }
 
     /**

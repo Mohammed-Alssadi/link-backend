@@ -2,6 +2,7 @@
 
 namespace App\Contracts;
 
+use App\Data\Products\ProductData;
 use App\Data\StoreProfileData;
 use App\Data\UserProfileData;
 use App\Models\OauthToken;
@@ -33,4 +34,26 @@ interface PlatformProvider
      * جلب بيانات المتجر الحية وتغليفها مباشرة في StoreProfileData
      */
     public function getStoreProfile(OauthToken $oauthToken): StoreProfileData;
+
+    /**
+     * جلب قائمة المنتجات الحية وتغليفها في مصفوفة ProductData DTOs
+     *
+     * @return ProductData[]
+     */
+    public function getProducts(OauthToken $oauthToken): array;
+
+    /**
+     * جلب بيانات منتج محدد حية برقم الـ ID وتغليفها في ProductData DTO
+     */
+    public function getProduct(OauthToken $oauthToken, string $productId): ProductData;
+
+    /**
+     * تحديث بيانات المنتج الحية على المنصة
+     */
+    public function updateProduct(OauthToken $oauthToken, string $productId, array $data): ProductData;
+
+    /**
+     * حذف المنتج الحية على المنصة
+     */
+    public function deleteProduct(OauthToken $oauthToken, string $productId): bool;
 }

@@ -3,6 +3,7 @@
 namespace App\Services\Platforms;
 
 use App\Contracts\PlatformProvider;
+use App\Data\Products\ProductData;
 use App\Data\StoreProfileData;
 use App\Data\UserProfileData;
 use App\Models\OauthToken;
@@ -158,6 +159,76 @@ class SallaProvider implements PlatformProvider
         $sallaData = $response->json('data') ?? [];
 
         return StoreProfileData::fromSalla($sallaData);
+    }
+
+    /**
+     * جلب قائمة المنتجات الحية مباشرة من API سلة تحول لـ ProductData DTOs
+     *
+     * @return ProductData[]
+     */
+    public function getProducts(OauthToken $oauthToken): array
+    {
+        $response = $this->apiClient($oauthToken)->get('/products');
+
+        if (! $response->successful()) {
+            throw new RuntimeException('فشل جلب قائمة المنتجات من منصة سلة');
+        }
+
+        $items = $response->json('data') ?? [];
+        $products = [];
+
+        foreach ($items as $item) {
+            $products[] = ProductData::fromSalla($item);
+        }
+
+        return $products;
+    }
+
+    /**
+     * جلب بيانات منتج محدد بالـ ID حية من API سلة وتحول لـ ProductData DTO
+     */
+    public function getProduct(OauthToken $oauthToken, string $productId): ProductData
+    {
+        $response = $this->apiClient($oauthToken)->get("/products/{$productId}");
+
+        if (! $response->successful()) {
+            throw new RuntimeException("فشل جلب المنتج رقم [{$productId}] من منصة سلة");
+        }
+
+        $item = $response->json('data') ?? [];
+
+        return ProductData::fromSalla($item);
+    }
+
+    /**
+     * تحديث بيانات المنتج في منصة سلة
+     */
+    public function updateProduct(OauthToken $oauthToken, string $productId, array $data): ProductData
+    {
+        $response = $this->apiClient($oauthToken)->put("/products/{$productId}", $data);
+
+        if (! $response->successful()) {
+            $errMsg = $response->json('message') ?? "فشل تحديث المنتج رقم [{$productId}] في منصة سلة";
+            throw new RuntimeException(is_array($errMsg) ? json_encode($errMsg) : $errMsg);
+        }
+
+        $item = $response->json('data') ?? [];
+
+        return ProductData::fromSalla($item);
+    }
+
+    /**
+     * حذف المنتج من منصة سلة
+     */
+    public function deleteProduct(OauthToken $oauthToken, string $productId): bool
+    {
+        $response = $this->apiClient($oauthToken)->delete("/products/{$productId}");
+
+        if (! $response->successful()) {
+            throw new RuntimeException("فشل حذف المنتج رقم [{$productId}] من منصة سلة");
+        }
+
+        return true;
     }
 
     /**

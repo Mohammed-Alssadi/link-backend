@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Data\Products\ProductData;
 use App\Data\StoreProfileData;
 use App\Data\UserProfileData;
 use App\Models\OauthToken;
@@ -49,6 +50,52 @@ class PlatformService
         $provider = $this->platformFactory->make($token->platform);
 
         return $provider->getStoreProfile($token);
+    }
+
+    /**
+     * جلب قائمة منتجات التاجر وتجديد التوكن تلقائياً عند اقتراب انتهائه
+     *
+     * @return ProductData[]
+     */
+    public function getProducts(User $user): array
+    {
+        $token = $this->getValidToken($user);
+        $provider = $this->platformFactory->make($token->platform);
+
+        return $provider->getProducts($token);
+    }
+
+    /**
+     * جلب بيانات منتج محدد حية برقم الـ ID وتجديد التوكن تلقائياً عند اقتراب انتهائه
+     */
+    public function getProduct(User $user, string $productId): ProductData
+    {
+        $token = $this->getValidToken($user);
+        $provider = $this->platformFactory->make($token->platform);
+
+        return $provider->getProduct($token, $productId);
+    }
+
+    /**
+     * تحديث بيانات منتج محدد حية وتجديد التوكن تلقائياً عند اقتراب انتهائه
+     */
+    public function updateProduct(User $user, string $productId, array $data): ProductData
+    {
+        $token = $this->getValidToken($user);
+        $provider = $this->platformFactory->make($token->platform);
+
+        return $provider->updateProduct($token, $productId, $data);
+    }
+
+    /**
+     * حذف منتج محدد وتجديد التوكن تلقائياً عند اقتراب انتهائه
+     */
+    public function deleteProduct(User $user, string $productId): bool
+    {
+        $token = $this->getValidToken($user);
+        $provider = $this->platformFactory->make($token->platform);
+
+        return $provider->deleteProduct($token, $productId);
     }
 
     /**
