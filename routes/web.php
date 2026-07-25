@@ -4,15 +4,16 @@ use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| Web Routes (Reserved for Super Admin / Admin Dashboard)
+| Pure REST API Web Routes
 |--------------------------------------------------------------------------
-| All merchant auth, Salla/Zid OAuth, and API operations are strictly
-| handled in routes/api.php for the SPA Frontend.
+| All merchant authentication and API operations are strictly handled
+| via REST API routes in routes/api.php for the SPA Frontend.
 */
 
 Route::get('/', function () {
     return response()->json([
-        'service' => 'SaaS Backend API Service',
+        'service' => 'Link SaaS Backend REST API Service',
         'status' => 'online',
+        'version' => '1.0.0',
     ]);
 });

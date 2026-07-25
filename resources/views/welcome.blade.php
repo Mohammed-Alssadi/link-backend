@@ -37,10 +37,10 @@
             </div>
         @endif
 
-        <!-- Single-Click SSO Buttons -->
+        <!-- Dynamic OAuth SSO Buttons -->
         <div class="space-y-4">
             <!-- 🟢 Salla SSO Button -->
-            <a href="{{ route('auth.salla.redirect') }}" 
+            <a href="{{ route('api.auth.redirect', ['platform' => 'salla']) }}" 
                class="w-full flex items-center justify-between px-6 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-emerald-600/30 group">
                 <span class="flex items-center gap-3">
                     <span class="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-xl">🟢</span>
@@ -52,7 +52,7 @@
             </a>
 
             <!-- 🟣 Zid SSO Button -->
-            <a href="{{ route('auth.zid.redirect') }}" 
+            <a href="{{ route('api.auth.redirect', ['platform' => 'zid']) }}" 
                class="w-full flex items-center justify-between px-6 py-4 bg-purple-700 hover:bg-purple-600 text-white rounded-xl font-bold transition-all shadow-lg hover:shadow-purple-700/30 group">
                 <span class="flex items-center gap-3">
                     <span class="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-xl">🟣</span>
