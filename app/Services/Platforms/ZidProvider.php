@@ -205,22 +205,39 @@ class ZidProvider implements PlatformProvider
      *
      * @return ProductData[]
      */
-    public function getProducts(OauthToken $oauthToken): array
+    public function getProducts(OauthToken $oauthToken, array $filters = []): array
     {
-        $response = $this->apiClient($oauthToken)->get('/products/');
+        $params = array_filter([
+            'page' => $filters['page'] ?? 1,
+            'page_size' => $filters['limit'] ?? 15,
+            'search' => $filters['search'] ?? null,
+            'category_id' => $filters['category_id'] ?? null,
+        ]);
+
+        $response = $this->apiClient($oauthToken)->get('/products/', $params);
 
         if (! $response->successful()) {
             if ($response->status() === 401) {
                 try {
                     $oauthToken = $this->refreshToken($oauthToken);
-                    $response = $this->apiClient($oauthToken)->get('/products/');
+                    $response = $this->apiClient($oauthToken)->get('/products/', $params);
                 } catch (\Throwable $e) {
                     \Illuminate\Support\Facades\Log::error("[Zid Token Refresh Error]: ".$e->getMessage());
                 }
             }
             if (! $response->successful()) {
                 if ($response->status() === 404) {
-                    return [];
+                    return [
+                        'data' => [],
+                        'pagination' => [
+                            'currentPage' => 1,
+                            'totalPages' => 1,
+                            'totalCount' => 0,
+                            'perPage' => 15,
+                            'hasNext' => false,
+                            'hasPrev' => false,
+                        ],
+                    ];
                 }
                 $errDetail = $response->json('message') ?? ($response->json('error') ?? $response->body());
                 $errStr = is_array($errDetail) ? json_encode($errDetail, JSON_UNESCAPED_UNICODE) : (string) $errDetail;
@@ -229,14 +246,29 @@ class ZidProvider implements PlatformProvider
             }
         }
 
-        $items = $response->json('results') ?? ($response->json('products') ?? ($response->json('data') ?? []));
-        $products = [];
+        $json = $response->json();
+        $items = $json['results'] ?? ($json['products'] ?? ($json['data'] ?? []));
+        $zidPaging = $json['paging'] ?? [];
 
+        $products = [];
         foreach ($items as $item) {
             $products[] = ProductData::fromZid($item);
         }
 
-        return $products;
+        $currentPage = (int) ($zidPaging['page'] ?? 1);
+        $totalPages = (int) ($zidPaging['total_pages'] ?? 1);
+
+        return [
+            'data' => $products,
+            'pagination' => [
+                'currentPage' => $currentPage,
+                'totalPages'  => $totalPages,
+                'totalCount'  => (int) ($zidPaging['count'] ?? 0),
+                'perPage'     => (int) ($zidPaging['page_size'] ?? 15),
+                'hasNext'     => $currentPage < $totalPages,
+                'hasPrev'     => $currentPage > 1,
+            ],
+        ];
     }
 
     /**
@@ -299,13 +331,19 @@ class ZidProvider implements PlatformProvider
      */
     public function getCategories(OauthToken $oauthToken): array
     {
-        $response = $this->apiClient($oauthToken)->get('/categories/');
+        $response = $this->apiClient($oauthToken)->get('/managers/store/categories/');
+        if (! $response->successful()) {
+            $response = $this->apiClient($oauthToken)->get('/categories/');
+        }
 
         if (! $response->successful()) {
             if ($response->status() === 401) {
                 try {
                     $oauthToken = $this->refreshToken($oauthToken);
-                    $response = $this->apiClient($oauthToken)->get('/categories/');
+                    $response = $this->apiClient($oauthToken)->get('/managers/store/categories/');
+                    if (! $response->successful()) {
+                        $response = $this->apiClient($oauthToken)->get('/categories/');
+                    }
                 } catch (\Throwable $e) {}
             }
             if (! $response->successful()) {

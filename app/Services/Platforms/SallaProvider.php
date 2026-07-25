@@ -166,22 +166,42 @@ class SallaProvider implements PlatformProvider
      *
      * @return ProductData[]
      */
-    public function getProducts(OauthToken $oauthToken): array
+    public function getProducts(OauthToken $oauthToken, array $filters = []): array
     {
-        $response = $this->apiClient($oauthToken)->get('/products');
+        $params = array_filter([
+            'page' => $filters['page'] ?? 1,
+            'per_page' => $filters['limit'] ?? 15,
+            'keyword' => $filters['search'] ?? null,
+            'category_id' => $filters['category_id'] ?? null,
+            'status' => $filters['status'] ?? null,
+        ]);
+
+        $response = $this->apiClient($oauthToken)->get('/products', $params);
 
         if (! $response->successful()) {
             throw new RuntimeException('فشل جلب قائمة المنتجات من منصة سلة');
         }
 
-        $items = $response->json('data') ?? [];
-        $products = [];
+        $json = $response->json();
+        $items = $json['data'] ?? [];
+        $sallaPagination = $json['pagination'] ?? [];
 
+        $products = [];
         foreach ($items as $item) {
             $products[] = ProductData::fromSalla($item);
         }
 
-        return $products;
+        return [
+            'data' => $products,
+            'pagination' => [
+                'currentPage' => (int) ($sallaPagination['currentPage'] ?? 1),
+                'totalPages'  => (int) ($sallaPagination['totalPages'] ?? 1),
+                'totalCount'  => (int) ($sallaPagination['total'] ?? 0),
+                'perPage'     => (int) ($sallaPagination['perPage'] ?? 15),
+                'hasNext'     => ($sallaPagination['currentPage'] ?? 1) < ($sallaPagination['totalPages'] ?? 1),
+                'hasPrev'     => ($sallaPagination['currentPage'] ?? 1) > 1,
+            ],
+        ];
     }
 
     /**

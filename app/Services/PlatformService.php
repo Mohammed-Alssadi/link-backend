@@ -57,12 +57,12 @@ class PlatformService
      *
      * @return ProductData[]
      */
-    public function getProducts(User $user): array
+    public function getProducts(User $user, array $filters = []): array
     {
         $token = $this->getValidToken($user);
         $provider = $this->platformFactory->make($token->platform);
 
-        return $provider->getProducts($token);
+        return $provider->getProducts($token, $filters);
     }
 
     /**

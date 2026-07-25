@@ -16,11 +16,27 @@ class ProductController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $products = $this->platformService->getProducts($request->user());
+        $filters = array_filter([
+            'page' => $request->query('page', 1),
+            'limit' => $request->query('limit', 15),
+            'search' => $request->query('search'),
+            'category_id' => $request->query('category_id'),
+            'status' => $request->query('status'),
+        ]);
+
+        $result = $this->platformService->getProducts($request->user(), $filters);
+
+        if (isset($result['data'])) {
+            return response()->json([
+                'success' => true,
+                'data' => $result['data'],
+                'pagination' => $result['pagination'] ?? null,
+            ]);
+        }
 
         return response()->json([
             'success' => true,
-            'data' => $products,
+            'data' => $result,
         ]);
     }
 

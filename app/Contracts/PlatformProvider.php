@@ -40,7 +40,7 @@ interface PlatformProvider
      *
      * @return ProductData[]
      */
-    public function getProducts(OauthToken $oauthToken): array;
+    public function getProducts(OauthToken $oauthToken, array $filters = []): array;
 
     /**
      * جلب بيانات منتج محدد حية برقم الـ ID وتغليفها في ProductData DTO
