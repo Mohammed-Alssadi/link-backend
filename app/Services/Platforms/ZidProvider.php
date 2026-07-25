@@ -1,14 +1,18 @@
 <?php
 
-namespace App\Services;
+namespace App\Services\Platforms;
 
+use App\Contracts\PlatformProvider;
+use App\Data\StoreProfileData;
+use App\Data\UserProfileData;
 use App\Models\OauthToken;
 use App\Models\User;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use InvalidArgumentException;
+use RuntimeException;
 
-class ZidService
+class ZidProvider implements PlatformProvider
 {
     public const OAUTH_URL = 'https://oauth.zid.sa/';
 
@@ -16,9 +20,8 @@ class ZidService
     {
         $state = str()->random(40);
         Cache::put('oauth_zid_state_'.$state, true, now()->addMinutes(15));
-        session(['oauth_zid_state' => $state]);
 
-        $redirectUri = config('services.zid.redirect') ?: route('auth.zid.callback');
+        $redirectUri = config('services.zid.redirect') ?: route('api.auth.callback', ['platform' => 'zid']);
 
         $queries = http_build_query([
             'client_id' => config('services.zid.client_id'),
@@ -32,17 +35,11 @@ class ZidService
 
     public function handleCallback(string $code, ?string $state = null): User
     {
-        if ($state) {
-            $cacheValid = Cache::pull('oauth_zid_state_'.$state);
-            $savedState = session('oauth_zid_state');
-            session()->forget('oauth_zid_state');
-
-            if (! $cacheValid && ($savedState && ! hash_equals($savedState, $state))) {
-                throw new \InvalidArgumentException('المعلومات الأمنية للطلب غير صالحة أو منتهية الصلاحية (Invalid State).');
-            }
+        if ($state && ! Cache::pull('oauth_zid_state_'.$state)) {
+            throw new InvalidArgumentException('المعلومات الأمنية للطلب غير صالحة أو منتهية الصلاحية (Invalid State).');
         }
 
-        $redirectUri = config('services.zid.redirect') ?: route('auth.zid.callback');
+        $redirectUri = config('services.zid.redirect') ?: route('api.auth.callback', ['platform' => 'zid']);
 
         // 1. Get OAuth Tokens from Zid
         $tokensUrl = self::OAUTH_URL.'oauth/token';
@@ -62,7 +59,7 @@ class ZidService
 
         if (empty($authToken) && empty($managerToken)) {
             $errMsg = $merchantTokens['error_description'] ?? ($merchantTokens['error'] ?? 'Failed to obtain access token from Zid.');
-            throw new \RuntimeException('Zid OAuth error: '.$errMsg);
+            throw new RuntimeException('Zid OAuth error: '.$errMsg);
         }
 
         $headers = [
@@ -75,12 +72,12 @@ class ZidService
         // 2. Fetch User Profile and Store Profile from Zid API
         $userHttpResponse = Http::withHeaders($headers)->get('https://api.zid.sa/v1/managers/account/profile');
         if (! $userHttpResponse->successful()) {
-            throw new \RuntimeException('Failed to fetch Zid user profile.');
+            throw new RuntimeException('Failed to fetch Zid user profile.');
         }
 
         $storeHttpResponse = Http::withHeaders($headers)->get('https://api.zid.sa/v1/managers/account/store');
         if (! $storeHttpResponse->successful()) {
-            throw new \RuntimeException('Failed to fetch Zid store profile.');
+            throw new RuntimeException('Failed to fetch Zid store profile.');
         }
 
         $userProfile = $userHttpResponse->json();
@@ -90,11 +87,11 @@ class ZidService
         $storeData = $storeProfile['store'] ?? ($storeProfile['data']['store'] ?? []);
 
         if (empty($userData['email'])) {
-            throw new \RuntimeException('Zid user profile is missing real email field.');
+            throw new RuntimeException('Zid user profile is missing real email field.');
         }
 
         if (empty($storeData['title']) || empty($storeData['id'])) {
-            throw new \RuntimeException('Zid store profile is missing real store data.');
+            throw new RuntimeException('Zid store profile is missing real store data.');
         }
 
         $merchantId = (string) $storeData['id'];
@@ -102,7 +99,7 @@ class ZidService
         $userName = (string) ($userData['name'] ?? $storeData['title']);
         $storeName = (string) $storeData['title'];
 
-        // 3. Find or Create User (No password required)
+        // 3. Find or Create User
         $user = User::firstOrCreate(
             ['email' => $userEmail],
             ['name' => $userName]
@@ -122,15 +119,13 @@ class ZidService
             ]
         );
 
-        Auth::login($user);
-
         return $user;
     }
 
     public function refreshToken(OauthToken $oauthToken): OauthToken
     {
         if (empty($oauthToken->refresh_token)) {
-            throw new \InvalidArgumentException('Refresh token is missing.');
+            throw new InvalidArgumentException('Refresh token is missing for Zid.');
         }
 
         $tokensUrl = self::OAUTH_URL.'oauth/token';
@@ -148,7 +143,7 @@ class ZidService
         $refreshToken = $merchantTokens['refresh_token'] ?? null;
 
         if (empty($managerToken)) {
-            throw new \RuntimeException('Failed to refresh Zid access token.');
+            throw new RuntimeException('Failed to refresh Zid access token.');
         }
 
         $oauthToken->update([
@@ -159,5 +154,70 @@ class ZidService
         ]);
 
         return $oauthToken;
+    }
+
+    public function getUserProfile(OauthToken $oauthToken): UserProfileData
+    {
+        $response = $this->apiClient($oauthToken)->get('/managers/account/profile');
+
+        if (! $response->successful()) {
+            throw new RuntimeException('فشل جلب بيانات التاجر من منصة زد');
+        }
+
+        return UserProfileData::fromZid($response->json());
+    }
+
+    public function getStoreProfile(OauthToken $oauthToken): StoreProfileData
+    {
+        $headers = $this->buildZidHeaders($oauthToken);
+
+        // ─── تنفيذ 5 طلبات متوازية عبر Http::pool ─────────────────────────────
+        $responses = Http::pool(fn ($pool) => [
+            $pool->as('store')->withHeaders($headers)->get('https://api.zid.sa/v1/managers/account/store'),
+            $pool->as('branding')->withHeaders($headers)->get('https://api.zid.sa/v1/managers/account/store/branding'),
+            $pool->as('social')->withHeaders($headers)->get('https://api.zid.sa/v1/managers/account/store/social'),
+            $pool->as('localization')->withHeaders($headers)->get('https://api.zid.sa/v1/managers/account/store/localization'),
+            $pool->as('business')->withHeaders($headers)->get('https://api.zid.sa/v1/managers/account/store/business'),
+        ]);
+
+        $storeData = $responses['store']->successful() ? $responses['store']->json() : [];
+        $brandingData = $responses['branding']->successful() ? $responses['branding']->json('branding') : null;
+        $socialData = $responses['social']->successful() ? $responses['social']->json('social') : null;
+        $localizationData = $responses['localization']->successful() ? $responses['localization']->json('localization') : null;
+        $businessData = $responses['business']->successful() ? $responses['business']->json('business') : null;
+
+        if (empty($storeData)) {
+            throw new RuntimeException('فشل جلب البيانات الأساسية للمتجر من منصة زد');
+        }
+
+        return StoreProfileData::fromZid(
+            $storeData,
+            $brandingData,
+            $socialData,
+            $localizationData,
+            $businessData
+        );
+    }
+
+    /**
+     * عميل HTTP الموحد والمبسط لطلبات API زد (HTTP Client Helper)
+     */
+    private function apiClient(OauthToken $token)
+    {
+        return Http::baseUrl('https://api.zid.sa/v1')
+            ->withHeaders($this->buildZidHeaders($token));
+    }
+
+    private function buildZidHeaders(OauthToken $token): array
+    {
+        $accessToken = $token->authorization_token ?? $token->access_token;
+        $managerToken = $token->access_token;
+
+        return [
+            'Authorization' => 'Bearer '.$accessToken,
+            'X-Manager-Token' => $managerToken ?? '',
+            'Accept-Language' => 'ar',
+            'Accept' => 'application/json',
+        ];
     }
 }
