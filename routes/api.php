@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\OAuthController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\ProfileController;
@@ -36,6 +37,9 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function () {
     // 👤 Merchant User Live Profile Endpoints
     Route::get('/user/profile', [ProfileController::class, 'user'])->name('api.user.profile');
     Route::get('/merchant/profile', [ProfileController::class, 'user'])->name('api.merchant.profile');
+
+    // 📂 Categories Live Endpoint
+    Route::get('/categories', [CategoryController::class, 'index'])->name('api.categories.index');
 
     // 📦 Products Live Endpoints
     Route::get('/products', [ProductController::class, 'index'])->name('api.products.index');

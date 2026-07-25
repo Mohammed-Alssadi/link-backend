@@ -232,6 +232,26 @@ class SallaProvider implements PlatformProvider
     }
 
     /**
+     * جلب قائمة التصنيفات الحية من منصة سلة
+     */
+    public function getCategories(OauthToken $oauthToken): array
+    {
+        $response = $this->apiClient($oauthToken)->get('/categories');
+
+        if (! $response->successful()) {
+            if ($response->status() === 401) {
+                $oauthToken = $this->refreshToken($oauthToken);
+                $response = $this->apiClient($oauthToken)->get('/categories');
+            }
+            if (! $response->successful()) {
+                return [];
+            }
+        }
+
+        return $response->json('data') ?? [];
+    }
+
+    /**
      * عميل HTTP الموحد والمبسط لطلبات API سلة (HTTP Client Helper)
      */
     private function apiClient(OauthToken $token)

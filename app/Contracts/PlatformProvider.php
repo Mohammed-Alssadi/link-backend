@@ -56,4 +56,9 @@ interface PlatformProvider
      * حذف المنتج الحية على المنصة
      */
     public function deleteProduct(OauthToken $oauthToken, string $productId): bool;
+
+    /**
+     * جلب تصنيفات المتجر الحية
+     */
+    public function getCategories(OauthToken $oauthToken): array;
 }

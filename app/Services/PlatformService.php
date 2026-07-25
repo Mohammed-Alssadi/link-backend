@@ -99,6 +99,17 @@ class PlatformService
     }
 
     /**
+     * جلب تصنيفات المتجر حية وتجديد التوكن تلقائياً عند اقتراب انتهائه
+     */
+    public function getCategories(User $user): array
+    {
+        $token = $this->getValidToken($user);
+        $provider = $this->platformFactory->make($token->platform);
+
+        return $provider->getCategories($token);
+    }
+
+    /**
      * التحقق من توكن التاجر وتجديده تلقائياً عند اقتراب الانتهاء (Auto-Refresh Strategy)
      */
     private function getValidToken(User $user): OauthToken

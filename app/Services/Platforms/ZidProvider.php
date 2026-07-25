@@ -210,10 +210,23 @@ class ZidProvider implements PlatformProvider
         $response = $this->apiClient($oauthToken)->get('/products/');
 
         if (! $response->successful()) {
-            if ($response->status() === 404) {
-                return [];
+            if ($response->status() === 401) {
+                try {
+                    $oauthToken = $this->refreshToken($oauthToken);
+                    $response = $this->apiClient($oauthToken)->get('/products/');
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::error("[Zid Token Refresh Error]: ".$e->getMessage());
+                }
             }
-            throw new RuntimeException('فشل جلب قائمة المنتجات من منصة زد');
+            if (! $response->successful()) {
+                if ($response->status() === 404) {
+                    return [];
+                }
+                $errDetail = $response->json('message') ?? ($response->json('error') ?? $response->body());
+                $errStr = is_array($errDetail) ? json_encode($errDetail, JSON_UNESCAPED_UNICODE) : (string) $errDetail;
+                \Illuminate\Support\Facades\Log::error("[ZidProvider getProducts Error]: status {$response->status()}, detail: {$errStr}");
+                throw new RuntimeException('فشل جلب قائمة المنتجات من منصة زد: '.$errStr);
+            }
         }
 
         $items = $response->json('results') ?? ($response->json('products') ?? ($response->json('data') ?? []));
@@ -234,7 +247,15 @@ class ZidProvider implements PlatformProvider
         $response = $this->apiClient($oauthToken)->get("/products/{$productId}/");
 
         if (! $response->successful()) {
-            throw new RuntimeException("فشل جلب بيانات المنتج [{$productId}] من منصة زد");
+            if ($response->status() === 401) {
+                try {
+                    $oauthToken = $this->refreshToken($oauthToken);
+                    $response = $this->apiClient($oauthToken)->get("/products/{$productId}/");
+                } catch (\Throwable $e) {}
+            }
+            if (! $response->successful()) {
+                throw new RuntimeException("فشل جلب بيانات المنتج [{$productId}] من منصة زد");
+            }
         }
 
         $rawProduct = $response->json('product') ?? ($response->json('data') ?? $response->json());
@@ -271,6 +292,28 @@ class ZidProvider implements PlatformProvider
         }
 
         return true;
+    }
+
+    /**
+     * جلب قائمة التصنيفات الحية من منصة زد
+     */
+    public function getCategories(OauthToken $oauthToken): array
+    {
+        $response = $this->apiClient($oauthToken)->get('/categories/');
+
+        if (! $response->successful()) {
+            if ($response->status() === 401) {
+                try {
+                    $oauthToken = $this->refreshToken($oauthToken);
+                    $response = $this->apiClient($oauthToken)->get('/categories/');
+                } catch (\Throwable $e) {}
+            }
+            if (! $response->successful()) {
+                return [];
+            }
+        }
+
+        return $response->json('categories') ?? ($response->json('results') ?? ($response->json('data') ?? []));
     }
 
     /**
