@@ -15,6 +15,12 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1/auth')->group(function () {
     Route::get('/{platform}/redirect', [OAuthController::class, 'redirect'])->name('api.auth.redirect');
     Route::get('/{platform}/callback', [OAuthController::class, 'callback'])->name('api.auth.callback');
+
+    // Backward compatibility route aliases
+    Route::get('/salla/redirect', [OAuthController::class, 'redirect'])->name('api.auth.salla.redirect');
+    Route::get('/salla/callback', [OAuthController::class, 'callback'])->name('api.auth.salla.callback');
+    Route::get('/zid/redirect', [OAuthController::class, 'redirect'])->name('api.auth.zid.redirect');
+    Route::get('/zid/callback', [OAuthController::class, 'callback'])->name('api.auth.zid.callback');
 });
 
 // 🔒 Protected Sanctum API Endpoints
