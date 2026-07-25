@@ -217,7 +217,8 @@ class ZidProvider implements PlatformProvider
         $response = $this->apiClient($oauthToken)->get('/products/', $params);
 
         if (! $response->successful()) {
-            if ($response->status() === 401) {
+            $errBody = $response->body();
+            if ($response->status() === 401 || $response->status() === 403 || str_contains($errBody, 'No such user')) {
                 try {
                     $oauthToken = $this->refreshToken($oauthToken);
                     $response = $this->apiClient($oauthToken)->get('/products/', $params);
@@ -226,7 +227,8 @@ class ZidProvider implements PlatformProvider
                 }
             }
             if (! $response->successful()) {
-                if ($response->status() === 404) {
+                if ($response->status() === 404 || str_contains($response->body(), 'No such user')) {
+                    \Illuminate\Support\Facades\Log::warning("[Zid Products Warning]: Token expired or user not found in Zid API.");
                     return [
                         'data' => [],
                         'pagination' => [

@@ -179,7 +179,30 @@ class SallaProvider implements PlatformProvider
         $response = $this->apiClient($oauthToken)->get('/products', $params);
 
         if (! $response->successful()) {
-            throw new RuntimeException('فشل جلب قائمة المنتجات من منصة سلة');
+            if ($response->status() === 401) {
+                try {
+                    $oauthToken = $this->refreshToken($oauthToken);
+                    $response = $this->apiClient($oauthToken)->get('/products', $params);
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::error("[Salla Token Refresh Error]: ".$e->getMessage());
+                }
+            }
+            if (! $response->successful()) {
+                if ($response->status() === 404) {
+                    return [
+                        'data' => [],
+                        'pagination' => [
+                            'currentPage' => 1,
+                            'totalPages' => 1,
+                            'totalCount' => 0,
+                            'perPage' => 15,
+                            'hasNext' => false,
+                            'hasPrev' => false,
+                        ],
+                    ];
+                }
+                throw new RuntimeException('فشل جلب قائمة المنتجات من منصة سلة: '.$response->body());
+            }
         }
 
         $json = $response->json();
