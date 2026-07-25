@@ -233,6 +233,20 @@ class ZidProvider implements PlatformProvider
                 }
             }
             if (! $response->successful()) {
+                if ($response->status() === 404 || str_contains($response->body(), 'No such user')) {
+                    \Illuminate\Support\Facades\Log::warning("[Zid Products Warning]: Token invalid or user not found in Zid API.");
+                    return [
+                        'data' => [],
+                        'pagination' => [
+                            'currentPage' => 1,
+                            'totalPages' => 1,
+                            'totalCount' => 0,
+                            'perPage' => 15,
+                            'hasNext' => false,
+                            'hasPrev' => false,
+                        ],
+                    ];
+                }
                 $errDetail = $response->json('message') ?? ($response->json('error') ?? $response->body());
                 $errStr = is_array($errDetail) ? json_encode($errDetail, JSON_UNESCAPED_UNICODE) : (string) $errDetail;
                 \Illuminate\Support\Facades\Log::error("[ZidProvider getProducts Error]: status {$response->status()}, detail: {$errStr}");
@@ -373,12 +387,19 @@ class ZidProvider implements PlatformProvider
     {
         $accessToken = $token->authorization_token ?? $token->access_token;
         $managerToken = $token->access_token;
+        $storeId = $token->merchant;
 
-        return [
+        $headers = [
             'Authorization' => 'Bearer '.$accessToken,
             'X-Manager-Token' => $managerToken ?? '',
             'Accept-Language' => 'ar',
             'Accept' => 'application/json',
         ];
+
+        if (! empty($storeId)) {
+            $headers['Store-Id'] = (string) $storeId;
+        }
+
+        return $headers;
     }
 }
