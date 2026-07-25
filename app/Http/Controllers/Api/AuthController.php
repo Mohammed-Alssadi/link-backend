@@ -33,9 +33,13 @@ class AuthController extends Controller
     {
         $request->user()->currentAccessToken()?->delete();
 
+        $isSecure = config('app.env') === 'production' || $request->secure();
+        $sameSite = $isSecure ? 'None' : 'Lax';
+        $cookie = cookie('access_token', '', -1, '/', null, $isSecure, true, false, $sameSite);
+
         return response()->json([
             'success' => true,
             'message' => 'تم تسجيل الخروج بنجاح',
-        ])->withCookie(cookie()->forget('access_token'));
+        ])->withCookie($cookie);
     }
 }

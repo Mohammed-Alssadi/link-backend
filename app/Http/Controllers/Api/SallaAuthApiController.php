@@ -54,16 +54,19 @@ class SallaAuthApiController extends Controller
             if ($isSpa) {
                 $token = $user->createToken('spa_api_token')->plainTextToken;
 
+                $isSecure = config('app.env') === 'production' || $request->secure();
+                $sameSite = $isSecure ? 'None' : 'Lax';
+
                 $cookie = cookie(
                     'access_token',
                     $token,
                     60 * 24 * 7,
                     '/',
                     null,
-                    config('app.env') === 'production',
+                    $isSecure,
                     true,
                     false,
-                    'Lax'
+                    $sameSite
                 );
 
                 return redirect($frontendUrl.'/auth/callback')->withCookie($cookie);
