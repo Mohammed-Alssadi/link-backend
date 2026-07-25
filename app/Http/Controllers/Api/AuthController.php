@@ -15,25 +15,36 @@ class AuthController extends Controller
 
         return response()->json([
             'success' => true,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-            ],
-            'store' => [
-                'platform' => $token?->platform,
-                'merchant_id' => $token?->merchant,
-                'store_name' => $token?->store_name,
-                'is_connected' => (bool) $token,
+            'data' => [
+                'user' => [
+                    'id' => $user?->id,
+                    'name' => $user?->name,
+                    'email' => $user?->email,
+                ],
+                'store' => [
+                    'platform' => $token?->platform,
+                    'merchant_id' => $token?->merchant,
+                    'store_name' => $token?->store_name,
+                    'is_connected' => (bool) $token,
+                ],
             ],
         ]);
     }
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()?->delete();
+        $request->user()?->currentAccessToken()?->delete();
 
-        $isSecure = config('app.env') === 'production' || $request->secure();
+        if (Auth::guard('web')->check()) {
+            Auth::guard('web')->logout();
+        }
+
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
+
+        $isSecure = $request->secure() || config('app.env') === 'production' || str_starts_with((string) config('app.url'), 'https://');
         $sameSite = $isSecure ? 'None' : 'Lax';
         $cookie = cookie('access_token', '', -1, '/', null, $isSecure, true, false, $sameSite);
 

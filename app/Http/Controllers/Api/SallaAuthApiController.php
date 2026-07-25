@@ -14,7 +14,7 @@ class SallaAuthApiController extends Controller
     public function redirect(Request $request, SallaService $sallaService): JsonResponse|RedirectResponse
     {
         // حفظ هل الطلب من تطبيق الـ SPA (الفرونت إند) أم من متصفح الـ Web المباشر
-        session(['auth_is_spa' => $request->wantsJson() || $request->is('v1/*') || $request->is('api/*')]);
+        session(['auth_is_spa' => $request->wantsJson() || $request->is('v1/*') || $request->is('api/*') || $request->has('spa')]);
 
         $url = $sallaService->getAuthorizationUrl();
 
@@ -31,8 +31,8 @@ class SallaAuthApiController extends Controller
 
     public function callback(Request $request, SallaService $sallaService): RedirectResponse
     {
-        $frontendUrl = env('FRONTEND_URL', 'http://localhost:5173');
-        $isSpa = session('auth_is_spa', false);
+        $frontendUrl = rtrim((string) env('FRONTEND_URL', 'http://localhost:5173'), '/');
+        $isSpa = session('auth_is_spa', true); // Default to true if accessed via API callback
         session()->forget('auth_is_spa');
 
         if ($request->has('error')) {
@@ -50,11 +50,11 @@ class SallaAuthApiController extends Controller
 
             Auth::login($user, true);
 
-            // إذا كانت المصادقة بدأت من الفرونت إند الـ SPA -> وجهه لـ localhost:5173 مع إرفاق الكوكي الآمنة
+            // إذا كانت المصادقة بدأت من الفرونت إند الـ SPA -> وجهه للفرونت إند مع إرفاق الكوكي الآمنة
             if ($isSpa) {
                 $token = $user->createToken('spa_api_token')->plainTextToken;
 
-                $isSecure = config('app.env') === 'production' || $request->secure();
+                $isSecure = $request->secure() || config('app.env') === 'production' || str_starts_with((string) config('app.url'), 'https://');
                 $sameSite = $isSecure ? 'None' : 'Lax';
 
                 $cookie = cookie(
