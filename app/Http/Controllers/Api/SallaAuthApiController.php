@@ -36,11 +36,12 @@ class SallaAuthApiController extends Controller
         session()->forget('auth_is_spa');
 
         if ($request->has('error')) {
-            return redirect($isSpa ? ($frontendUrl . '/login?error=salla_denied') : route('login'));
+            $errorReason = $request->query('error_description', 'تم إلغاء الإذن من سلة');
+            return redirect($isSpa ? ($frontendUrl . '/login?error=' . urlencode($errorReason)) : route('login'))->with('error', $errorReason);
         }
 
         if (! $request->filled('code')) {
-            return redirect($isSpa ? ($frontendUrl . '/login?error=code_missing') : route('login'));
+            return redirect($isSpa ? ($frontendUrl . '/login?error=code_missing') : route('login'))->with('error', 'لم يتم استلام رمز الفحص (code missing)');
         }
 
         try {
@@ -58,7 +59,8 @@ class SallaAuthApiController extends Controller
             return redirect()->route('dashboard');
         } catch (\Throwable $e) {
             report($e);
-            return redirect($isSpa ? ($frontendUrl . '/login?error=auth_failed') : route('login'));
+            $errMsg = 'فشل تسجيل الدخول عبر سلة: ' . $e->getMessage();
+            return redirect($isSpa ? ($frontendUrl . '/login?error=' . urlencode($e->getMessage())) : route('login'))->with('error', $errMsg);
         }
     }
 }

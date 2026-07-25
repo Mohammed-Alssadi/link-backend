@@ -18,9 +18,11 @@ class ZidService
         Cache::put('oauth_zid_state_' . $state, true, now()->addMinutes(15));
         session(['oauth_zid_state' => $state]);
 
+        $redirectUri = config('services.zid.redirect') ?: route('auth.zid.callback');
+
         $queries = http_build_query([
             'client_id' => config('services.zid.client_id'),
-            'redirect_uri' => config('services.zid.redirect') ?: (url('/auth/zid/callback')),
+            'redirect_uri' => $redirectUri,
             'response_type' => 'code',
             'state' => $state,
         ]);
@@ -35,10 +37,12 @@ class ZidService
             $savedState = session('oauth_zid_state');
             session()->forget('oauth_zid_state');
 
-            if (!$cacheValid && ($savedState && !hash_equals($savedState, $state))) {
-                throw new \InvalidArgumentException('Invalid or expired OAuth state parameter.');
+            if (! $cacheValid && ($savedState && ! hash_equals($savedState, $state))) {
+                throw new \InvalidArgumentException('المعلومات الأمنية للطلب غير صالحة أو منتهية الصلاحية (Invalid State).');
             }
         }
+
+        $redirectUri = config('services.zid.redirect') ?: route('auth.zid.callback');
 
         // 1. Get OAuth Tokens from Zid
         $tokensUrl = self::OAUTH_URL . 'oauth/token';
@@ -46,7 +50,7 @@ class ZidService
             'grant_type' => 'authorization_code',
             'client_id' => config('services.zid.client_id'),
             'client_secret' => config('services.zid.client_secret'),
-            'redirect_uri' => config('services.zid.redirect') ?: (url('/auth/zid/callback')),
+            'redirect_uri' => $redirectUri,
             'code' => $code,
         ]);
 

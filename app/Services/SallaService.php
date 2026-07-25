@@ -18,9 +18,11 @@ class SallaService
         Cache::put('oauth_salla_state_' . $state, true, now()->addMinutes(15));
         session(['oauth_salla_state' => $state]);
 
+        $redirectUri = config('services.salla.redirect') ?: route('auth.salla.callback');
+
         $queries = http_build_query([
             'client_id' => config('services.salla.client_id'),
-            'redirect_uri' => config('services.salla.redirect') ?: (url('/auth/salla/callback')),
+            'redirect_uri' => $redirectUri,
             'response_type' => 'code',
             'scope' => 'offline_access',
             'state' => $state,
@@ -36,10 +38,12 @@ class SallaService
             $savedState = session('oauth_salla_state');
             session()->forget('oauth_salla_state');
 
-            if (!$cacheValid && ($savedState && !hash_equals($savedState, $state))) {
-                throw new \InvalidArgumentException('Invalid or expired OAuth state parameter.');
+            if (! $cacheValid && ($savedState && ! hash_equals($savedState, $state))) {
+                throw new \InvalidArgumentException('المعلومات الأمنية للطلب غير صالحة أو منتهية الصلاحية (Invalid State).');
             }
         }
+
+        $redirectUri = config('services.salla.redirect') ?: route('auth.salla.callback');
 
         // 1. Get Access Token from Salla OAuth Endpoint via Direct HTTP
         $tokensUrl = self::OAUTH_URL . 'token';
@@ -47,7 +51,7 @@ class SallaService
             'grant_type' => 'authorization_code',
             'client_id' => config('services.salla.client_id'),
             'client_secret' => config('services.salla.client_secret'),
-            'redirect_uri' => config('services.salla.redirect') ?: (url('/auth/salla/callback')),
+            'redirect_uri' => $redirectUri,
             'code' => $code,
         ]);
 
