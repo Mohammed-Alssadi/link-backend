@@ -15,13 +15,14 @@ return [
     |
     */
 
-    'paths' => ['api/*', 'v1/*', 'sanctum/csrf-cookie'],
+    'paths' => ['api/*', 'v1/*', 'auth/*', 'oauth/*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
 
     'allowed_origins' => array_values(array_unique(array_filter([
         rtrim((string) env('FRONTEND_URL', 'http://localhost:5173'), '/'),
-        rtrim((string) env('APP_URL', ''), '/'),
+        rtrim((string) env('APP_URL', 'https://link.voyexa.online'), '/'),
+        'https://link.voyexa.online',
         'http://localhost:5173',
         'http://127.0.0.1:5173',
         'http://localhost:3000',
