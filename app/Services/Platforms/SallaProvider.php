@@ -21,7 +21,7 @@ class SallaProvider implements PlatformProvider
         $state = str()->random(40);
         Cache::put('oauth_salla_state_'.$state, true, now()->addMinutes(15));
 
-        $redirectUri = config('services.salla.redirect') ?: route('api.auth.callback', ['platform' => 'salla']);
+        $redirectUri = config('services.salla.redirect') ?: route('auth.callback', ['platform' => 'salla']);
 
         $queries = http_build_query([
             'client_id' => config('services.salla.client_id'),
@@ -40,7 +40,7 @@ class SallaProvider implements PlatformProvider
             throw new InvalidArgumentException('المعلومات الأمنية للطلب غير صالحة أو منتهية الصلاحية (Invalid State).');
         }
 
-        $redirectUri = config('services.salla.redirect') ?: route('api.auth.callback', ['platform' => 'salla']);
+        $redirectUri = config('services.salla.redirect') ?: route('auth.callback', ['platform' => 'salla']);
 
         // 1. Get Access Token from Salla OAuth Endpoint
         $tokensUrl = self::OAUTH_URL.'token';

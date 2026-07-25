@@ -21,7 +21,7 @@ class ZidProvider implements PlatformProvider
         $state = str()->random(40);
         Cache::put('oauth_zid_state_'.$state, true, now()->addMinutes(15));
 
-        $redirectUri = config('services.zid.redirect') ?: route('api.auth.callback', ['platform' => 'zid']);
+        $redirectUri = config('services.zid.redirect') ?: route('auth.callback', ['platform' => 'zid']);
 
         $queries = http_build_query([
             'client_id' => config('services.zid.client_id'),
@@ -39,7 +39,7 @@ class ZidProvider implements PlatformProvider
             throw new InvalidArgumentException('المعلومات الأمنية للطلب غير صالحة أو منتهية الصلاحية (Invalid State).');
         }
 
-        $redirectUri = config('services.zid.redirect') ?: route('api.auth.callback', ['platform' => 'zid']);
+        $redirectUri = config('services.zid.redirect') ?: route('auth.callback', ['platform' => 'zid']);
 
         // 1. Get OAuth Tokens from Zid
         $tokensUrl = self::OAUTH_URL.'oauth/token';
