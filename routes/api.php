@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\MerchantProfileController;
 use App\Http\Controllers\Api\SallaAuthApiController;
 use App\Http\Controllers\Api\StoreProfileController;
 use App\Http\Controllers\Api\UserProfileController;

@@ -28,12 +28,13 @@ Route::get('/auth/zid/callback', [ZidAuthApiController::class, 'callback'])->nam
 // Protected Routes
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
-    
+
     // 🔴 Logout Route
     Route::post('/logout', function (Request $request) {
         Auth::logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+
         return redirect('/');
     })->name('logout');
 });

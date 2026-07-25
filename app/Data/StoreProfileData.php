@@ -189,9 +189,9 @@ class StoreProfileData extends Data
             $curr = $localizationData['currency'] ?? null;
             $localization = new ZidLocalizationData(
                 language: $lang ? ['name' => $lang['name'] ?? '', 'code' => $lang['code'] ?? '', 'direction' => $lang['direction'] ?? 'rtl'] : null,
-                languages: array_map(fn($l) => ['name' => $l['name'] ?? '', 'code' => $l['code'] ?? '', 'direction' => $l['direction'] ?? 'rtl'], $localizationData['languages'] ?? []),
+                languages: array_map(fn ($l) => ['name' => $l['name'] ?? '', 'code' => $l['code'] ?? '', 'direction' => $l['direction'] ?? 'rtl'], $localizationData['languages'] ?? []),
                 currency: $curr ? ['name' => $curr['name'] ?? '', 'code' => $curr['code'] ?? '', 'symbol' => trim($curr['symbol'] ?? ''), 'flag' => $curr['country']['flag'] ?? null, 'countryName' => $curr['country']['name'] ?? null, 'countryCode' => $curr['country']['code'] ?? null] : null,
-                currencies: array_map(fn($c) => ['name' => $c['name'] ?? '', 'code' => $c['code'] ?? '', 'symbol' => trim($c['symbol'] ?? ''), 'flag' => $c['country']['flag'] ?? null, 'countryName' => $c['country']['name'] ?? null, 'countryCode' => $c['country']['code'] ?? null], $localizationData['currencies'] ?? [])
+                currencies: array_map(fn ($c) => ['name' => $c['name'] ?? '', 'code' => $c['code'] ?? '', 'symbol' => trim($c['symbol'] ?? ''), 'flag' => $c['country']['flag'] ?? null, 'countryName' => $c['country']['name'] ?? null, 'countryCode' => $c['country']['code'] ?? null], $localizationData['currencies'] ?? [])
             );
         }
 

@@ -33,7 +33,7 @@ class UserProfileService
     {
         $authBaseUrl = config('services.salla.auth_base_url', 'https://accounts.salla.sa');
         $response = Http::withToken($accessToken)
-            ->get($authBaseUrl . '/oauth2/user/info');
+            ->get($authBaseUrl.'/oauth2/user/info');
 
         if (! $response->successful()) {
             throw new \RuntimeException('فشل جلب بيانات التاجر من سلة');
@@ -45,7 +45,7 @@ class UserProfileService
     private function fetchZidUserProfile(string $accessToken, ?string $managerToken): UserProfileData
     {
         $headers = [
-            'Authorization' => 'Bearer ' . $accessToken,
+            'Authorization' => 'Bearer '.$accessToken,
             'X-Manager-Token' => $managerToken ?? '',
             'Accept-Language' => 'ar',
             'Accept' => 'application/json',

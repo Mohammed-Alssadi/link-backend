@@ -37,11 +37,12 @@ class ZidAuthApiController extends Controller
 
         if ($request->has('error')) {
             $errorReason = $request->query('error_description', 'تم إلغاء الإذن من زد');
-            return redirect($isSpa ? ($frontendUrl . '/login?error=' . urlencode($errorReason)) : route('login'))->with('error', $errorReason);
+
+            return redirect($isSpa ? ($frontendUrl.'/login?error='.urlencode($errorReason)) : route('login'))->with('error', $errorReason);
         }
 
         if (! $request->filled('code')) {
-            return redirect($isSpa ? ($frontendUrl . '/login?error=code_missing') : route('login'))->with('error', 'لم يتم استلام رمز الفحص (code missing)');
+            return redirect($isSpa ? ($frontendUrl.'/login?error=code_missing') : route('login'))->with('error', 'لم يتم استلام رمز الفحص (code missing)');
         }
 
         try {
@@ -49,18 +50,32 @@ class ZidAuthApiController extends Controller
 
             Auth::login($user, true);
 
-            // إذا كانت المصادقة بدأت من الفرونت إند الـ SPA -> وجهه لـ localhost:5173 مع التوكن
+            // إذا كانت المصادقة بدأت من الفرونت إند الـ SPA -> وجهه لـ localhost:5173 مع إرفاق الكوكي الآمنة
             if ($isSpa) {
                 $token = $user->createToken('spa_api_token')->plainTextToken;
-                return redirect($frontendUrl . '/auth/callback?token=' . $token);
+
+                $cookie = cookie(
+                    'access_token',
+                    $token,
+                    60 * 24 * 7,
+                    '/',
+                    null,
+                    config('app.env') === 'production',
+                    true,
+                    false,
+                    'Lax'
+                );
+
+                return redirect($frontendUrl.'/auth/callback')->withCookie($cookie);
             }
 
             // إذا كانت المصادقة من ويب الباك إند المباشر -> وجهه لـ /dashboard الباك إند
             return redirect()->route('dashboard');
         } catch (\Throwable $e) {
             report($e);
-            $errMsg = 'فشل تسجيل الدخول عبر زد: ' . $e->getMessage();
-            return redirect($isSpa ? ($frontendUrl . '/login?error=' . urlencode($e->getMessage())) : route('login'))->with('error', $errMsg);
+            $errMsg = 'فشل تسجيل الدخول عبر زد: '.$e->getMessage();
+
+            return redirect($isSpa ? ($frontendUrl.'/login?error='.urlencode($e->getMessage())) : route('login'))->with('error', $errMsg);
         }
     }
 }

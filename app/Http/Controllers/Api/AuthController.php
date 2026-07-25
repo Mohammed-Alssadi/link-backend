@@ -36,6 +36,6 @@ class AuthController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'تم تسجيل الخروج بنجاح',
-        ]);
+        ])->withCookie(cookie()->forget('access_token'));
     }
 }

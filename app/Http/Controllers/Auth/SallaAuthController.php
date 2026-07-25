@@ -19,7 +19,8 @@ class SallaAuthController extends Controller
     {
         if ($request->has('error')) {
             $msg = $request->get('error_description') ?: $request->get('error');
-            return redirect('/')->with('error', 'Salla OAuth Error: ' . $msg);
+
+            return redirect('/')->with('error', 'Salla OAuth Error: '.$msg);
         }
 
         if (! $request->filled('code')) {
@@ -34,6 +35,7 @@ class SallaAuthController extends Controller
             return redirect()->route('dashboard');
         } catch (\Throwable $e) {
             report($e);
+
             return redirect('/')->with('error', 'فشلت عملية المصادقة مع منصة سلة. يرجى المحاولة مرة أخرى.');
         }
     }

@@ -15,7 +15,7 @@ class ZidService
     public function getAuthorizationUrl(): string
     {
         $state = str()->random(40);
-        Cache::put('oauth_zid_state_' . $state, true, now()->addMinutes(15));
+        Cache::put('oauth_zid_state_'.$state, true, now()->addMinutes(15));
         session(['oauth_zid_state' => $state]);
 
         $redirectUri = config('services.zid.redirect') ?: route('auth.zid.callback');
@@ -27,13 +27,13 @@ class ZidService
             'state' => $state,
         ]);
 
-        return self::OAUTH_URL . 'oauth/authorize?' . $queries;
+        return self::OAUTH_URL.'oauth/authorize?'.$queries;
     }
 
     public function handleCallback(string $code, ?string $state = null): User
     {
         if ($state) {
-            $cacheValid = Cache::pull('oauth_zid_state_' . $state);
+            $cacheValid = Cache::pull('oauth_zid_state_'.$state);
             $savedState = session('oauth_zid_state');
             session()->forget('oauth_zid_state');
 
@@ -45,7 +45,7 @@ class ZidService
         $redirectUri = config('services.zid.redirect') ?: route('auth.zid.callback');
 
         // 1. Get OAuth Tokens from Zid
-        $tokensUrl = self::OAUTH_URL . 'oauth/token';
+        $tokensUrl = self::OAUTH_URL.'oauth/token';
         $response = Http::asForm()->post($tokensUrl, [
             'grant_type' => 'authorization_code',
             'client_id' => config('services.zid.client_id'),
@@ -62,11 +62,11 @@ class ZidService
 
         if (empty($authToken) && empty($managerToken)) {
             $errMsg = $merchantTokens['error_description'] ?? ($merchantTokens['error'] ?? 'Failed to obtain access token from Zid.');
-            throw new \RuntimeException('Zid OAuth error: ' . $errMsg);
+            throw new \RuntimeException('Zid OAuth error: '.$errMsg);
         }
 
         $headers = [
-            'Authorization' => 'Bearer ' . ($authToken ?? $managerToken),
+            'Authorization' => 'Bearer '.($authToken ?? $managerToken),
             'X-Manager-Token' => $managerToken ?? '',
             'Accept-Language' => 'ar',
             'Accept' => 'application/json',
@@ -133,7 +133,7 @@ class ZidService
             throw new \InvalidArgumentException('Refresh token is missing.');
         }
 
-        $tokensUrl = self::OAUTH_URL . 'oauth/token';
+        $tokensUrl = self::OAUTH_URL.'oauth/token';
         $response = Http::asForm()->post($tokensUrl, [
             'grant_type' => 'refresh_token',
             'client_id' => config('services.zid.client_id'),

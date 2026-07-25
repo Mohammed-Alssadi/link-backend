@@ -15,7 +15,7 @@ class SallaService
     public function getAuthorizationUrl(): string
     {
         $state = str()->random(40);
-        Cache::put('oauth_salla_state_' . $state, true, now()->addMinutes(15));
+        Cache::put('oauth_salla_state_'.$state, true, now()->addMinutes(15));
         session(['oauth_salla_state' => $state]);
 
         $redirectUri = config('services.salla.redirect') ?: route('auth.salla.callback');
@@ -28,13 +28,13 @@ class SallaService
             'state' => $state,
         ]);
 
-        return self::OAUTH_URL . 'auth?' . $queries;
+        return self::OAUTH_URL.'auth?'.$queries;
     }
 
     public function handleCallback(string $code, ?string $state = null): User
     {
         if ($state) {
-            $cacheValid = Cache::pull('oauth_salla_state_' . $state);
+            $cacheValid = Cache::pull('oauth_salla_state_'.$state);
             $savedState = session('oauth_salla_state');
             session()->forget('oauth_salla_state');
 
@@ -46,7 +46,7 @@ class SallaService
         $redirectUri = config('services.salla.redirect') ?: route('auth.salla.callback');
 
         // 1. Get Access Token from Salla OAuth Endpoint via Direct HTTP
-        $tokensUrl = self::OAUTH_URL . 'token';
+        $tokensUrl = self::OAUTH_URL.'token';
         $response = Http::asForm()->post($tokensUrl, [
             'grant_type' => 'authorization_code',
             'client_id' => config('services.salla.client_id'),
@@ -63,12 +63,12 @@ class SallaService
 
         if (empty($accessToken)) {
             $errMsg = $tokens['error_description'] ?? ($tokens['error'] ?? 'Failed to obtain access token from Salla.');
-            throw new \RuntimeException('Salla OAuth error: ' . $errMsg);
+            throw new \RuntimeException('Salla OAuth error: '.$errMsg);
         }
 
         // 2. Fetch Store Profile details from Salla API
         $profileHttpResponse = Http::withToken($accessToken)
-            ->get(self::OAUTH_URL . 'user/info');
+            ->get(self::OAUTH_URL.'user/info');
 
         if (! $profileHttpResponse->successful()) {
             throw new \RuntimeException('Failed to fetch Salla merchant profile.');
@@ -116,7 +116,7 @@ class SallaService
             throw new \InvalidArgumentException('Refresh token is missing.');
         }
 
-        $tokensUrl = self::OAUTH_URL . 'token';
+        $tokensUrl = self::OAUTH_URL.'token';
         $response = Http::asForm()->post($tokensUrl, [
             'grant_type' => 'refresh_token',
             'client_id' => config('services.salla.client_id'),

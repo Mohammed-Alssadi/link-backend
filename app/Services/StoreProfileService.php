@@ -34,20 +34,21 @@ class StoreProfileService
         $apiBaseUrl = config('services.salla.api_base_url', 'https://api.salla.dev/admin/v2');
         $response = Http::withToken($accessToken)
             ->withHeaders(['Accept' => 'application/json'])
-            ->get($apiBaseUrl . '/store/info');
+            ->get($apiBaseUrl.'/store/info');
 
         if (! $response->successful()) {
             throw new \RuntimeException('فشل جلب بيانات المتجر من منصة سلة');
         }
 
         $sallaData = $response->json('data') ?? [];
+
         return StoreProfileData::fromSalla($sallaData);
     }
 
     private function fetchZidStoreProfile(string $accessToken, ?string $managerToken): StoreProfileData
     {
         $headers = [
-            'Authorization' => 'Bearer ' . $accessToken,
+            'Authorization' => 'Bearer '.$accessToken,
             'X-Manager-Token' => $managerToken ?? '',
             'Accept-Language' => 'ar',
             'Accept' => 'application/json',
