@@ -214,33 +214,25 @@ class ZidProvider implements PlatformProvider
             'category_id' => $filters['category_id'] ?? null,
         ]);
 
-        $response = $this->apiClient($oauthToken)->get('/products/', $params);
+        $response = $this->apiClient($oauthToken)->get('/managers/store/products/', $params);
+        if (! $response->successful()) {
+            $response = $this->apiClient($oauthToken)->get('/products/', $params);
+        }
 
         if (! $response->successful()) {
             $errBody = $response->body();
             if ($response->status() === 401 || $response->status() === 403 || str_contains($errBody, 'No such user')) {
                 try {
                     $oauthToken = $this->refreshToken($oauthToken);
-                    $response = $this->apiClient($oauthToken)->get('/products/', $params);
+                    $response = $this->apiClient($oauthToken)->get('/managers/store/products/', $params);
+                    if (! $response->successful()) {
+                        $response = $this->apiClient($oauthToken)->get('/products/', $params);
+                    }
                 } catch (\Throwable $e) {
                     \Illuminate\Support\Facades\Log::error("[Zid Token Refresh Error]: ".$e->getMessage());
                 }
             }
             if (! $response->successful()) {
-                if ($response->status() === 404 || str_contains($response->body(), 'No such user')) {
-                    \Illuminate\Support\Facades\Log::warning("[Zid Products Warning]: Token expired or user not found in Zid API.");
-                    return [
-                        'data' => [],
-                        'pagination' => [
-                            'currentPage' => 1,
-                            'totalPages' => 1,
-                            'totalCount' => 0,
-                            'perPage' => 15,
-                            'hasNext' => false,
-                            'hasPrev' => false,
-                        ],
-                    ];
-                }
                 $errDetail = $response->json('message') ?? ($response->json('error') ?? $response->body());
                 $errStr = is_array($errDetail) ? json_encode($errDetail, JSON_UNESCAPED_UNICODE) : (string) $errDetail;
                 \Illuminate\Support\Facades\Log::error("[ZidProvider getProducts Error]: status {$response->status()}, detail: {$errStr}");
@@ -278,13 +270,19 @@ class ZidProvider implements PlatformProvider
      */
     public function getProduct(OauthToken $oauthToken, string $productId): ProductData
     {
-        $response = $this->apiClient($oauthToken)->get("/products/{$productId}/");
+        $response = $this->apiClient($oauthToken)->get("/managers/store/products/{$productId}/");
+        if (! $response->successful()) {
+            $response = $this->apiClient($oauthToken)->get("/products/{$productId}/");
+        }
 
         if (! $response->successful()) {
             if ($response->status() === 401) {
                 try {
                     $oauthToken = $this->refreshToken($oauthToken);
-                    $response = $this->apiClient($oauthToken)->get("/products/{$productId}/");
+                    $response = $this->apiClient($oauthToken)->get("/managers/store/products/{$productId}/");
+                    if (! $response->successful()) {
+                        $response = $this->apiClient($oauthToken)->get("/products/{$productId}/");
+                    }
                 } catch (\Throwable $e) {}
             }
             if (! $response->successful()) {
@@ -302,7 +300,10 @@ class ZidProvider implements PlatformProvider
      */
     public function updateProduct(OauthToken $oauthToken, string $productId, array $data): ProductData
     {
-        $response = $this->apiClient($oauthToken)->patch("/products/{$productId}/", $data);
+        $response = $this->apiClient($oauthToken)->patch("/managers/store/products/{$productId}/", $data);
+        if (! $response->successful()) {
+            $response = $this->apiClient($oauthToken)->patch("/products/{$productId}/", $data);
+        }
 
         if (! $response->successful()) {
             $errMsg = $response->json('message') ?? "فشل تحديث المنتج رقم [{$productId}] في منصة زد";
@@ -319,7 +320,10 @@ class ZidProvider implements PlatformProvider
      */
     public function deleteProduct(OauthToken $oauthToken, string $productId): bool
     {
-        $response = $this->apiClient($oauthToken)->delete("/products/{$productId}/");
+        $response = $this->apiClient($oauthToken)->delete("/managers/store/products/{$productId}/");
+        if (! $response->successful()) {
+            $response = $this->apiClient($oauthToken)->delete("/products/{$productId}/");
+        }
 
         if (! $response->successful()) {
             throw new RuntimeException("فشل حذف المنتج رقم [{$productId}] من منصة زد");
