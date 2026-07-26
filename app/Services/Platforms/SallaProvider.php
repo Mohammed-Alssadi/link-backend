@@ -174,7 +174,8 @@ class SallaProvider implements PlatformProvider
             'keyword' => $filters['search'] ?? null,
             'category_id' => $filters['category_id'] ?? null,
             'status' => $filters['status'] ?? null,
-        ]);
+            'format' => 'light',
+        ], fn ($value) => $value !== null && $value !== '');
 
         $response = $this->apiClient($oauthToken)->get('/products', $params);
 
@@ -188,14 +189,14 @@ class SallaProvider implements PlatformProvider
                 }
             }
             if (! $response->successful()) {
-                if ($response->status() === 404) {
+                if ($response->status() === 404 || $response->status() === 422) {
                     return [
                         'data' => [],
                         'pagination' => [
-                            'currentPage' => 1,
+                            'currentPage' => (int) ($filters['page'] ?? 1),
                             'totalPages' => 1,
                             'totalCount' => 0,
-                            'perPage' => 15,
+                            'perPage' => (int) ($filters['limit'] ?? 15),
                             'hasNext' => false,
                             'hasPrev' => false,
                         ],
@@ -214,15 +215,20 @@ class SallaProvider implements PlatformProvider
             $products[] = ProductData::fromSalla($item);
         }
 
+        $currentPage = (int) ($sallaPagination['currentPage'] ?? $sallaPagination['current_page'] ?? $filters['page'] ?? 1);
+        $totalPages  = (int) ($sallaPagination['totalPages'] ?? $sallaPagination['total_pages'] ?? 1);
+        $totalCount  = (int) ($sallaPagination['total'] ?? $sallaPagination['count'] ?? 0);
+        $perPage     = (int) ($sallaPagination['perPage'] ?? $sallaPagination['per_page'] ?? $filters['limit'] ?? 15);
+
         return [
             'data' => $products,
             'pagination' => [
-                'currentPage' => (int) ($sallaPagination['currentPage'] ?? 1),
-                'totalPages'  => (int) ($sallaPagination['totalPages'] ?? 1),
-                'totalCount'  => (int) ($sallaPagination['total'] ?? 0),
-                'perPage'     => (int) ($sallaPagination['perPage'] ?? 15),
-                'hasNext'     => ($sallaPagination['currentPage'] ?? 1) < ($sallaPagination['totalPages'] ?? 1),
-                'hasPrev'     => ($sallaPagination['currentPage'] ?? 1) > 1,
+                'currentPage' => $currentPage,
+                'totalPages'  => $totalPages,
+                'totalCount'  => $totalCount,
+                'perPage'     => $perPage,
+                'hasNext'     => $currentPage < $totalPages,
+                'hasPrev'     => $currentPage > 1,
             ],
         ];
     }

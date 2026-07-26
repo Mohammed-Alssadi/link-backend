@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\PlatformService;
+use App\Http\Requests\ProductFilterRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -14,15 +15,9 @@ class ProductController extends Controller
     /**
      * جلب قائمة المنتجات الحية الموحدة لجميع المنصات
      */
-    public function index(Request $request): JsonResponse
+    public function index(ProductFilterRequest $request): JsonResponse
     {
-        $filters = array_filter([
-            'page' => $request->query('page', 1),
-            'limit' => $request->query('limit', 15),
-            'search' => $request->query('search'),
-            'category_id' => $request->query('category_id'),
-            'status' => $request->query('status'),
-        ]);
+        $filters = $request->validatedFilters();
 
         $result = $this->platformService->getProducts($request->user(), $filters);
 

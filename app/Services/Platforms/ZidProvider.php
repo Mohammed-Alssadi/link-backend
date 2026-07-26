@@ -207,12 +207,26 @@ class ZidProvider implements PlatformProvider
      */
     public function getProducts(OauthToken $oauthToken, array $filters = []): array
     {
+        $statusFilter = $filters['status'] ?? null;
+        $isPublished = null;
+        $inStock = null;
+
+        if ($statusFilter === 'sale') {
+            $isPublished = 'true';
+        } elseif ($statusFilter === 'hidden') {
+            $isPublished = 'false';
+        } elseif ($statusFilter === 'out') {
+            $inStock = 'false';
+        }
+
         $params = array_filter([
             'page' => $filters['page'] ?? 1,
             'page_size' => $filters['limit'] ?? 15,
             'search' => $filters['search'] ?? null,
-            'category_id' => $filters['category_id'] ?? null,
-        ]);
+            'categories' => $filters['category_id'] ?? null,
+            'is_published' => $isPublished,
+            'in_stock' => $inStock,
+        ], fn ($value) => $value !== null && $value !== '');
 
         $response = $this->apiClient($oauthToken)->get('/managers/store/products/', $params);
         if (! $response->successful()) {
@@ -238,10 +252,10 @@ class ZidProvider implements PlatformProvider
                     return [
                         'data' => [],
                         'pagination' => [
-                            'currentPage' => 1,
+                            'currentPage' => (int) ($filters['page'] ?? 1),
                             'totalPages' => 1,
                             'totalCount' => 0,
-                            'perPage' => 15,
+                            'perPage' => (int) ($filters['limit'] ?? 15),
                             'hasNext' => false,
                             'hasPrev' => false,
                         ],
@@ -256,23 +270,25 @@ class ZidProvider implements PlatformProvider
 
         $json = $response->json();
         $items = $json['results'] ?? ($json['products'] ?? ($json['data'] ?? []));
-        $zidPaging = $json['paging'] ?? [];
+        $zidPaging = $json['paging'] ?? ($json['pagination'] ?? []);
 
         $products = [];
         foreach ($items as $item) {
             $products[] = ProductData::fromZid($item);
         }
 
-        $currentPage = (int) ($zidPaging['page'] ?? 1);
-        $totalPages = (int) ($zidPaging['total_pages'] ?? 1);
+        $currentPage = (int) ($zidPaging['page'] ?? $zidPaging['current_page'] ?? $filters['page'] ?? 1);
+        $perPage     = (int) ($zidPaging['page_size'] ?? $zidPaging['per_page'] ?? $filters['limit'] ?? 15);
+        $totalCount  = (int) ($zidPaging['count'] ?? $zidPaging['total'] ?? $json['count'] ?? 0);
+        $totalPages  = (int) ($zidPaging['total_pages'] ?? ($perPage > 0 ? ceil($totalCount / $perPage) : 1));
 
         return [
             'data' => $products,
             'pagination' => [
                 'currentPage' => $currentPage,
-                'totalPages'  => $totalPages,
-                'totalCount'  => (int) ($zidPaging['count'] ?? 0),
-                'perPage'     => (int) ($zidPaging['page_size'] ?? 15),
+                'totalPages'  => max(1, $totalPages),
+                'totalCount'  => $totalCount,
+                'perPage'     => $perPage,
                 'hasNext'     => $currentPage < $totalPages,
                 'hasPrev'     => $currentPage > 1,
             ],
