@@ -405,6 +405,70 @@ class ZidProvider implements PlatformProvider
     }
 
     /**
+     * جلب قائمة سمات المتجر العامة من منصة زد (Store Attributes)
+     */
+    public function getAttributes(OauthToken $oauthToken): array
+    {
+        $response = $this->apiClient($oauthToken)->get('/managers/store/attributes/');
+        if (! $response->successful()) {
+            $response = $this->apiClient($oauthToken)->get('/attributes/');
+        }
+
+        if (! $response->successful()) {
+            if ($response->status() === 401) {
+                try {
+                    $oauthToken = $this->refreshToken($oauthToken);
+                    $response = $this->apiClient($oauthToken)->get('/managers/store/attributes/');
+                    if (! $response->successful()) {
+                        $response = $this->apiClient($oauthToken)->get('/attributes/');
+                    }
+                } catch (\Throwable $e) {}
+            }
+            if (! $response->successful()) {
+                return [];
+            }
+        }
+
+        return $response->json('attributes') ?? ($response->json('results') ?? ($response->json('data') ?? []));
+    }
+
+    /**
+     * إنشاء سمة متجر عامة جديدة في منصة زد
+     */
+    public function createAttribute(OauthToken $oauthToken, array $data): array
+    {
+        $response = $this->apiClient($oauthToken)->post('/managers/store/attributes/', $data);
+        if (! $response->successful()) {
+            $response = $this->apiClient($oauthToken)->post('/attributes/', $data);
+        }
+
+        if (! $response->successful()) {
+            $errMsg = $response->json('message') ?? 'فشل إنشاء السمة العامة في منصة زد';
+            throw new RuntimeException(is_array($errMsg) ? json_encode($errMsg, JSON_UNESCAPED_UNICODE) : (string) $errMsg);
+        }
+
+        return $response->json('attribute') ?? ($response->json('data') ?? $response->json());
+    }
+
+    /**
+     * إضافة قيمة جاهزة (Preset) لسمة متجر في منصة زد
+     */
+    public function addAttributePreset(OauthToken $oauthToken, string $attributeId, array $data): array
+    {
+        $response = $this->apiClient($oauthToken)->post("/managers/store/attributes/{$attributeId}/presets/", $data);
+        if (! $response->successful()) {
+            $response = $this->apiClient($oauthToken)->post("/attributes/{$attributeId}/presets/", $data);
+        }
+
+        if (! $response->successful()) {
+            $errMsg = $response->json('message') ?? "فشل إضافة القيمة المسبقة للسمة رقم [{$attributeId}] في منصة زد";
+            throw new RuntimeException(is_array($errMsg) ? json_encode($errMsg, JSON_UNESCAPED_UNICODE) : (string) $errMsg);
+        }
+
+        return $response->json('preset') ?? ($response->json('data') ?? $response->json());
+    }
+
+    /**
      * عميل HTTP الموحد والمبسط لطلبات API زد (HTTP Client Helper)
      */
     private function apiClient(OauthToken $token)

@@ -230,6 +230,11 @@ class ProductData extends Data
             nameAr: $nameAr,
             nameEn: $nameEn,
             descriptionAr: (string) ($rawProduct['description'] ?? ''),
+            descriptionEn: is_array($rawProduct['description'] ?? null) ? (string) ($rawProduct['description']['en'] ?? null) : null,
+            shortDescriptionAr: isset($rawProduct['subtitle']) || isset($rawProduct['short_description'])
+                ? (string) ($rawProduct['subtitle'] ?? $rawProduct['short_description'] ?? '')
+                : null,
+            shortDescriptionEn: is_array($rawProduct['subtitle'] ?? null) ? (string) ($rawProduct['subtitle']['en'] ?? null) : null,
             sku: (string) ($rawProduct['sku'] ?? ''),
             barcode: (string) ($rawProduct['barcode'] ?? ''),
             mpn: isset($rawProduct['mpn']) ? (string) $rawProduct['mpn'] : null,

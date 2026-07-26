@@ -172,9 +172,8 @@ class SallaProvider implements PlatformProvider
             'page' => $filters['page'] ?? 1,
             'per_page' => $filters['limit'] ?? 15,
             'keyword' => $filters['search'] ?? null,
-            'category_id' => $filters['category_id'] ?? null,
+            'category' => $filters['category_id'] ?? null,
             'status' => $filters['status'] ?? null,
-          
         ], fn ($value) => $value !== null && $value !== '');
 
         $response = $this->apiClient($oauthToken)->get('/products', $params);

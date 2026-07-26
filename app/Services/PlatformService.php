@@ -110,6 +110,51 @@ class PlatformService
     }
 
     /**
+     * جلب سمات المتجر العامة وتجديد التوكن تلقائياً (خاصة بزد)
+     */
+    public function getAttributes(User $user): array
+    {
+        $token = $this->getValidToken($user);
+        $provider = $this->platformFactory->make($token->platform);
+
+        if (method_exists($provider, 'getAttributes')) {
+            return $provider->getAttributes($token);
+        }
+
+        return [];
+    }
+
+    /**
+     * إنشاء سمة متجر عامة جديدة وتجديد التوكن تلقائياً (خاصة بزد)
+     */
+    public function createAttribute(User $user, array $data): array
+    {
+        $token = $this->getValidToken($user);
+        $provider = $this->platformFactory->make($token->platform);
+
+        if (method_exists($provider, 'createAttribute')) {
+            return $provider->createAttribute($token, $data);
+        }
+
+        return [];
+    }
+
+    /**
+     * إضافة قيمة مسبقة لسمة متجر وتجديد التوكن تلقائياً (خاصة بزد)
+     */
+    public function addAttributePreset(User $user, string $attributeId, array $data): array
+    {
+        $token = $this->getValidToken($user);
+        $provider = $this->platformFactory->make($token->platform);
+
+        if (method_exists($provider, 'addAttributePreset')) {
+            return $provider->addAttributePreset($token, $attributeId, $data);
+        }
+
+        return [];
+    }
+
+    /**
      * التحقق من توكن التاجر وتجديده تلقائياً عند اقتراب الانتهاء (Auto-Refresh Strategy)
      */
     private function getValidToken(User $user): OauthToken

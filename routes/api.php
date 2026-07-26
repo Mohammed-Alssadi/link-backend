@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AttributeController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\OAuthController;
@@ -40,6 +41,11 @@ Route::middleware('auth:sanctum')->prefix('v1')->group(function () {
 
     // 📂 Categories Live Endpoint
     Route::get('/categories', [CategoryController::class, 'index'])->name('api.categories.index');
+
+    // 🏷️ Store Attributes Live Endpoints (Zid Attributes)
+    Route::get('/attributes', [AttributeController::class, 'index'])->name('api.attributes.index');
+    Route::post('/attributes', [AttributeController::class, 'store'])->name('api.attributes.store');
+    Route::post('/attributes/{attributeId}/presets', [AttributeController::class, 'addPreset'])->name('api.attributes.presets.store');
 
     // 📦 Products Live Endpoints
     Route::get('/products', [ProductController::class, 'index'])->name('api.products.index');
