@@ -219,11 +219,14 @@ class ZidProvider implements PlatformProvider
             $inStock = 'false';
         }
 
+        $catId = $filters['category_id'] ?? ($filters['category'] ?? null);
+
         $params = array_filter([
             'page' => $filters['page'] ?? 1,
             'page_size' => $filters['limit'] ?? 15,
             'search' => $filters['search'] ?? null,
-            'categories' => $filters['category_id'] ?? null,
+            'categories' => $catId,
+            'category' => $catId,
             'is_published' => $isPublished,
             'in_stock' => $inStock,
         ], fn ($value) => $value !== null && $value !== '');

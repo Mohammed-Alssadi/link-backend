@@ -168,12 +168,16 @@ class SallaProvider implements PlatformProvider
      */
     public function getProducts(OauthToken $oauthToken, array $filters = []): array
     {
+        $catId = $filters['category_id'] ?? ($filters['category'] ?? null);
+
         $params = array_filter([
             'page' => $filters['page'] ?? 1,
             'per_page' => $filters['limit'] ?? 15,
             'keyword' => $filters['search'] ?? null,
-            'category' => $filters['category_id'] ?? null,
+            'category_id' => $catId,
+            'category' => $catId,
             'status' => $filters['status'] ?? null,
+            'format' => 'light',
         ], fn ($value) => $value !== null && $value !== '');
 
         $response = $this->apiClient($oauthToken)->get('/products', $params);
