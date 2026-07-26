@@ -52,7 +52,14 @@ class ProductData extends Data
         public array $keywords = [],
         public string $platform = 'salla',
         public string $htmlUrl = '',
-        public ?string $weightType = 'kg'
+        public ?string $weightType = 'kg',
+        public ?string $formattedPrice = null,
+        public ?string $formattedSalePrice = null,
+        public ?array $badge = null,
+        public ?array $scopedPrices = null,
+        public ?array $metafields = null,
+        public ?string $productClass = null,
+        public ?string $structure = null
     ) {}
 
     /**
@@ -100,22 +107,70 @@ class ProductData extends Data
             }
         }
 
+        // بناء خريطة خيارات سلة لتسهيل مطابقة أرقام قيم الخيارات مع مسمياتها
+        $optionValuesMap = [];
+        $customOptions = [];
+        if (isset($rawProduct['options']) && is_array($rawProduct['options'])) {
+            foreach ($rawProduct['options'] as $opt) {
+                $optId = (string) $opt['id'];
+                $optName = self::getLocalizedString($opt['name'] ?? $opt['translations']['ar']['option_name'] ?? '');
+                $choices = [];
+
+                if (isset($opt['values']) && is_array($opt['values'])) {
+                    foreach ($opt['values'] as $valItem) {
+                        $valId = (string) $valItem['id'];
+                        $valName = self::getLocalizedString($valItem['name'] ?? $valItem['translations']['ar']['option_details_name'] ?? '');
+                        $optionValuesMap[$valId] = [
+                            'optId' => $optId,
+                            'optName' => $optName,
+                            'valName' => $valName,
+                        ];
+                        $choices[] = [
+                            'id' => $valId,
+                            'label' => $valName,
+                            'imageUrl' => $valItem['image_url'] ?? null,
+                        ];
+                    }
+                }
+
+                $customOptions[] = new ProductCustomOptionData(
+                    id: $optId,
+                    type: (string) ($opt['type'] ?? 'radio'),
+                    label: $optName,
+                    isRequired: (bool) ($opt['required'] ?? false),
+                    choices: $choices
+                );
+            }
+        }
+
         $variants = [];
         if (isset($rawProduct['skus']) && is_array($rawProduct['skus'])) {
             foreach ($rawProduct['skus'] as $skuItem) {
                 $skuIsUnlimited = (bool) ($skuItem['unlimited_quantity'] ?? false);
                 $attributes = [];
 
+                // 1. استخراج الخصائص من الكائن المباشر إن وجد
                 if (isset($skuItem['related_option_values']) && is_array($skuItem['related_option_values'])) {
                     foreach ($skuItem['related_option_values'] as $valItem) {
-                        $optName = self::getLocalizedString($valItem['option_name'] ?? $valItem['option']['name'] ?? $valItem['title'] ?? '');
-                        $valName = self::getLocalizedString($valItem['name'] ?? $valItem['display_value'] ?? $valItem['value'] ?? $valItem['label'] ?? '');
-                        if ($valName !== '') {
+                        if (is_array($valItem)) {
+                            $optName = self::getLocalizedString($valItem['option_name'] ?? $valItem['option']['name'] ?? $valItem['title'] ?? '');
+                            $valName = self::getLocalizedString($valItem['name'] ?? $valItem['display_value'] ?? $valItem['value'] ?? $valItem['label'] ?? '');
+                            if ($valName !== '') {
+                                $attributes[] = new ProductAttributeData(
+                                    id: (string) ($valItem['option_id'] ?? $valItem['option']['id'] ?? ''),
+                                    valueId: (string) ($valItem['id'] ?? $valItem['value_id'] ?? ''),
+                                    name: $optName,
+                                    value: $valName
+                                );
+                            }
+                        } elseif (is_scalar($valItem) && isset($optionValuesMap[(string) $valItem])) {
+                            // 2. البحث في خريطة خيارات سلة إذا كانت المخرجات عبارة عن أرقام IDs فقط
+                            $mapped = $optionValuesMap[(string) $valItem];
                             $attributes[] = new ProductAttributeData(
-                                id: (string) ($valItem['option_id'] ?? $valItem['option']['id'] ?? ''),
-                                valueId: (string) ($valItem['id'] ?? $valItem['value_id'] ?? ''),
-                                name: $optName,
-                                value: $valName
+                                id: $mapped['optId'],
+                                valueId: (string) $valItem,
+                                name: $mapped['optName'],
+                                value: $mapped['valName']
                             );
                         }
                     }
@@ -124,9 +179,12 @@ class ProductData extends Data
                 $skuDisplayName = self::getLocalizedString($skuItem['display_name'] ?? $skuItem['name'] ?? $skuItem['title'] ?? '');
                 if (empty($skuDisplayName)) {
                     $skuDisplayName = ! empty($attributes)
-                        ? implode(' / ', array_map(fn ($a) => $a->value, $attributes))
+                        ? implode(' / ', array_map(fn ($a) => ($a->name ? "{$a->name}: " : '').$a->value, $attributes))
                         : (string) ($skuItem['sku'] ?? "متغير {$skuItem['id']}");
                 }
+
+                $varPrice = self::extractPrice($skuItem['regular_price'] ?? $skuItem['price'] ?? null) ?? 0.0;
+                $varSalePrice = self::extractPrice($skuItem['sale_price'] ?? null);
 
                 $variants[] = new ProductVariantData(
                     id: (string) $skuItem['id'],
@@ -134,20 +192,22 @@ class ProductData extends Data
                     barcode: isset($skuItem['barcode']) ? (string) $skuItem['barcode'] : null,
                     mpn: isset($skuItem['mpn']) ? (string) $skuItem['mpn'] : null,
                     gtin: isset($skuItem['gtin']) ? (string) $skuItem['gtin'] : null,
-                    price: self::extractPrice($skuItem['regular_price'] ?? $skuItem['price']) ?? 0.0,
-                    salePrice: self::extractPrice($skuItem['sale_price'] ?? null),
+                    price: $varPrice,
+                    salePrice: $varSalePrice,
                     costPrice: self::extractPrice($skuItem['cost_price'] ?? null),
                     quantity: (int) ($skuItem['stock_quantity'] ?? 0),
                     isUnlimited: $skuIsUnlimited,
                     weight: isset($skuItem['weight']) ? (float) $skuItem['weight'] : null,
                     displayName: $skuDisplayName,
+                    formattedPrice: number_format($varPrice, 2).' SAR',
+                    formattedSalePrice: $varSalePrice ? number_format($varSalePrice, 2).' SAR' : null,
                     attributes: $attributes,
                     stocks: $stocks
                 );
             }
         }
 
-        $basePrice = self::extractPrice($rawProduct['regular_price'] ?? $rawProduct['price']) ?? 0.0;
+        $basePrice = self::extractPrice($rawProduct['regular_price'] ?? $rawProduct['price'] ?? null) ?? 0.0;
         $salePrice = self::extractPrice($rawProduct['sale_price'] ?? null);
 
         $nameAr = is_array($rawProduct['name'] ?? null)
@@ -191,7 +251,7 @@ class ProductData extends Data
             images: $images,
             stocks: $stocks,
             variants: $variants,
-            customOptions: null,
+            customOptions: $customOptions,
             minOrderQuantity: isset($rawProduct['minimum_quantity_per_order']) ? (int) $rawProduct['minimum_quantity_per_order'] : null,
             maxOrderQuantity: isset($rawProduct['maximum_quantity_per_order']) ? (int) $rawProduct['maximum_quantity_per_order'] : null,
             maxItemsPerUser: isset($rawProduct['max_items_per_user']) ? (int) $rawProduct['max_items_per_user'] : null,
@@ -201,7 +261,14 @@ class ProductData extends Data
             keywords: array_filter($tagsArray),
             platform: 'salla',
             htmlUrl: (string) ($rawProduct['urls']['customer'] ?? $rawProduct['url'] ?? ''),
-            weightType: (string) ($rawProduct['weight_type'] ?? 'kg')
+            weightType: (string) ($rawProduct['weight_type'] ?? 'kg'),
+            formattedPrice: number_format($basePrice, 2).' SAR',
+            formattedSalePrice: $salePrice ? number_format($salePrice, 2).' SAR' : null,
+            badge: null,
+            scopedPrices: $rawProduct['scoped_prices'] ?? null,
+            metafields: null,
+            productClass: (string) ($rawProduct['type'] ?? 'product'),
+            structure: ! empty($variants) ? 'parent' : 'standalone'
         );
     }
 
@@ -271,20 +338,25 @@ class ProductData extends Data
                 }
 
                 $displayName = ! empty($attributes)
-                    ? implode(' / ', array_map(fn ($a) => $a->value, $attributes))
-                    : (string) ($v['sku'] ?? "متغير {$v['id']}");
+                    ? implode(' / ', array_map(fn ($a) => ($a->name ? "{$a->name}: " : '').$a->value, $attributes))
+                    : (string) ($v['name']['ar'] ?? $v['name']['en'] ?? $v['sku'] ?? "متغير {$v['id']}");
+
+                $vPrice = self::extractPrice($v['price'] ?? $v['regular_price'] ?? null) ?? 0.0;
+                $vSalePrice = self::extractPrice($v['sale_price'] ?? null);
 
                 $variants[] = new ProductVariantData(
                     id: (string) $v['id'],
                     sku: (string) ($v['sku'] ?? ''),
                     barcode: isset($v['barcode']) ? (string) $v['barcode'] : null,
-                    price: self::extractPrice($v['price'] ?? 0) ?? 0.0,
-                    salePrice: self::extractPrice($v['sale_price'] ?? null),
+                    price: $vPrice,
+                    salePrice: $vSalePrice,
                     costPrice: self::extractPrice($v['cost'] ?? null),
                     quantity: (int) ($v['quantity'] ?? 0),
                     isUnlimited: (bool) ($v['is_infinite'] ?? false),
                     weight: isset($v['weight']['value']) ? (float) $v['weight']['value'] : (isset($v['weight']) ? (float) $v['weight'] : null),
                     displayName: $displayName,
+                    formattedPrice: $v['formatted_price'] ?? (number_format($vPrice, 2).' SAR'),
+                    formattedSalePrice: $v['formatted_sale_price'] ?? ($vSalePrice ? number_format($vSalePrice, 2).' SAR' : null),
                     attributes: $attributes,
                     stocks: $stocks
                 );
@@ -292,7 +364,28 @@ class ProductData extends Data
         }
 
         $customOptions = [];
-        if (is_array($rawCustomOptions)) {
+        if (isset($rawProduct['options']) && is_array($rawProduct['options'])) {
+            foreach ($rawProduct['options'] as $opt) {
+                $choices = [];
+                $rawChoices = $opt['choices'] ?? $opt['options'] ?? [];
+                if (is_array($rawChoices)) {
+                    foreach ($rawChoices as $idx => $c) {
+                        $choices[] = [
+                            'id' => is_array($c) ? (string) ($c['id'] ?? $idx) : (string) $c,
+                            'label' => is_array($c) ? ($c['label']['ar'] ?? $c['label']['en'] ?? (string) ($c['label'] ?? '')) : (string) $c,
+                        ];
+                    }
+                }
+
+                $customOptions[] = new ProductCustomOptionData(
+                    id: (string) ($opt['id'] ?? ''),
+                    type: (string) ($opt['type'] ?? 'radio'),
+                    label: is_array($opt['name'] ?? null) ? ($opt['name']['ar'] ?? $opt['name']['en'] ?? '') : (string) ($opt['name'] ?? ''),
+                    isRequired: (bool) ($opt['is_required'] ?? false),
+                    choices: $choices
+                );
+            }
+        } elseif (is_array($rawCustomOptions)) {
             foreach ($rawCustomOptions as $opt) {
                 $choices = [];
                 $rawChoices = $opt['choices'] ?? $opt['options'] ?? [];
@@ -315,7 +408,24 @@ class ProductData extends Data
             }
         }
 
+        $basePrice = self::extractPrice($rawProduct['price'] ?? $rawProduct['regular_price'] ?? null) ?? 0.0;
         $salePrice = self::extractPrice($rawProduct['sale_price'] ?? null);
+
+        $badge = null;
+        if (isset($rawProduct['badge']) && is_array($rawProduct['badge'])) {
+            $badgeLabel = is_array($rawProduct['badge']['body'] ?? null)
+                ? ($rawProduct['badge']['body']['ar'] ?? $rawProduct['badge']['body']['en'] ?? '')
+                : (string) ($rawProduct['badge']['body'] ?? '');
+            if (! empty($badgeLabel)) {
+                $badge = [
+                    'label' => $badgeLabel,
+                    'icon' => $rawProduct['badge']['icon']['code'] ?? null,
+                ];
+            }
+        }
+
+        $isPublished = (bool) ($rawProduct['is_published'] ?? true);
+        $status = $isPublished ? 'sale' : (($rawProduct['is_draft'] ?? false) ? 'hidden' : 'sale');
 
         return new self(
             id: (string) $rawProduct['id'],
@@ -327,7 +437,7 @@ class ProductData extends Data
             shortDescriptionEn: is_array($rawProduct['short_description'] ?? null) ? (string) ($rawProduct['short_description']['en'] ?? '') : null,
             sku: (string) ($rawProduct['sku'] ?? ''),
             barcode: (string) ($rawProduct['barcode'] ?? ''),
-            price: self::extractPrice($rawProduct['price'] ?? 0) ?? 0.0,
+            price: $basePrice,
             costPrice: self::extractPrice($rawProduct['cost'] ?? null),
             salePrice: $salePrice,
             isDiscountActive: $salePrice !== null && $salePrice > 0,
@@ -336,7 +446,8 @@ class ProductData extends Data
             isUnlimited: (bool) ($rawProduct['is_infinite'] ?? false),
             quantity: (int) ($rawProduct['quantity'] ?? 0),
             weight: (float) ($rawProduct['weight']['value'] ?? $rawProduct['weight'] ?? 0),
-            isPublished: (bool) ($rawProduct['is_published'] ?? true),
+            isPublished: $isPublished,
+            status: $status,
             requiresShipping: (bool) ($rawProduct['requires_shipping'] ?? true),
             isTaxable: (bool) ($rawProduct['is_taxable'] ?? false),
             categories: $categories,
@@ -353,7 +464,15 @@ class ProductData extends Data
             seoSlug: (string) ($rawProduct['slug'] ?? ''),
             keywords: is_array($rawProduct['keywords'] ?? null) ? $rawProduct['keywords'] : [],
             platform: 'zid',
-            htmlUrl: (string) ($rawProduct['html_url'] ?? '')
+            htmlUrl: (string) ($rawProduct['html_url'] ?? ''),
+            weightType: 'kg',
+            formattedPrice: $rawProduct['formatted_price'] ?? (number_format($basePrice, 2).' SAR'),
+            formattedSalePrice: $rawProduct['formatted_sale_price'] ?? ($salePrice ? number_format($salePrice, 2).' SAR' : null),
+            badge: $badge,
+            scopedPrices: null,
+            metafields: $rawProduct['metafields'] ?? null,
+            productClass: (string) ($rawProduct['product_class'] ?? 'product'),
+            structure: (string) ($rawProduct['structure'] ?? (! empty($variants) ? 'parent' : 'standalone'))
         );
     }
 

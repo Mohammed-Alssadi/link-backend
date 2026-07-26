@@ -19,6 +19,8 @@ class ProductVariantData extends Data
         public bool $isUnlimited = false,
         public ?float $weight = null,
         public string $displayName = '',
+        public ?string $formattedPrice = null,
+        public ?string $formattedSalePrice = null,
         /** @var ProductAttributeData[] */
         public array $attributes = [],
         /** @var ProductLocationStockData[] */

@@ -322,6 +322,20 @@ class ZidProvider implements PlatformProvider
 
         $rawProduct = $response->json('product') ?? ($response->json('data') ?? $response->json());
 
+        if (empty($rawProduct['variants']) && (($rawProduct['has_options'] ?? false) || ($rawProduct['structure'] ?? '') === 'parent')) {
+            try {
+                $varResponse = $this->apiClient($oauthToken)->get("/managers/store/products/{$productId}/variants/");
+                if (! $varResponse->successful()) {
+                    $varResponse = $this->apiClient($oauthToken)->get("/products/{$productId}/variants/");
+                }
+                if ($varResponse->successful()) {
+                    $rawProduct['variants'] = $varResponse->json('results') ?? ($varResponse->json('variants') ?? ($varResponse->json('data') ?? []));
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("[Zid Variants Fetch Warning]: ".$e->getMessage());
+            }
+        }
+
         return ProductData::fromZid($rawProduct);
     }
 
