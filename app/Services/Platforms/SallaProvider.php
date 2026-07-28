@@ -171,13 +171,12 @@ class SallaProvider implements PlatformProvider
         $catId = $filters['category_id'] ?? ($filters['category'] ?? null);
 
         $params = array_filter([
-            'page' => $filters['page'] ?? 1,
-            'per_page' => $filters['limit'] ?? 15,
-            'keyword' => $filters['search'] ?? null,
-            'category_id' => $catId,
+            'page'        => (int) ($filters['page'] ?? 1),
+            'per_page'    => (int) ($filters['limit'] ?? 15),
+            'keyword'     => $filters['search'] ?? null,
             'category' => $catId,
-            'status' => $filters['status'] ?? null,
-    
+            // ملاحظة: سلة تستخدم category_id فقط، وليس 'category'
+            'status'      => $filters['status'] ?? null,
         ], fn ($value) => $value !== null && $value !== '');
 
         $response = $this->apiClient($oauthToken)->get('/products', $params);
@@ -218,20 +217,30 @@ class SallaProvider implements PlatformProvider
             $products[] = ProductData::fromSalla($item);
         }
 
-        $currentPage = (int) ($sallaPagination['currentPage'] ?? $sallaPagination['current_page'] ?? $filters['page'] ?? 1);
-        $totalPages  = (int) ($sallaPagination['totalPages'] ?? $sallaPagination['total_pages'] ?? 1);
-        $totalCount  = (int) ($sallaPagination['total'] ?? $sallaPagination['count'] ?? 0);
-        $perPage     = (int) ($sallaPagination['perPage'] ?? $sallaPagination['per_page'] ?? $filters['limit'] ?? 15);
+        // ─── Pagination سلة الحقيقية: { "count": N, "current": 1, "next": "URL_or_null" } ───
+        // سلة لا تُرجع totalPages أو totalCount بشكل مباشر
+        $currentPage = (int) ($sallaPagination['current'] ?? $filters['page'] ?? 1);
+        $countInPage = (int) ($sallaPagination['count'] ?? count($products));
+        $perPage     = (int) ($filters['limit'] ?? 15);
+        $nextUrl     = $sallaPagination['next'] ?? null;
+        $hasNext     = ! empty($nextUrl);
+        $hasPrev     = $currentPage > 1;
+        // تقدير totalPages: إذا كان next موجوداً → هناك على الأقل صفحة أخرى
+        $totalPages  = $hasNext ? ($currentPage + 1) : $currentPage;
+        // تقدير totalCount: لا يوجد في سلة، نحسب الحد الأدنى المعروف
+        $totalCount  = $hasNext
+            ? ($currentPage * $perPage)  // الحد الأدنى المعروف
+            : (($currentPage - 1) * $perPage + $countInPage);
 
         return [
-            'data' => $products,
+            'data'       => $products,
             'pagination' => [
                 'currentPage' => $currentPage,
                 'totalPages'  => $totalPages,
                 'totalCount'  => $totalCount,
                 'perPage'     => $perPage,
-                'hasNext'     => $currentPage < $totalPages,
-                'hasPrev'     => $currentPage > 1,
+                'hasNext'     => $hasNext,
+                'hasPrev'     => $hasPrev,
             ],
         ];
     }

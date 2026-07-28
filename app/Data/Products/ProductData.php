@@ -323,21 +323,34 @@ class ProductData extends Data
             }
         }
 
+        // ── استخراج المتغيرات (Variants) ────────────────────────────────────────
+        // بنية زد الحقيقية للمتغير:
+        // { "id": "...", "sku": "...", "attributes": [
+        //     { "name": {"en":"Color","ar":"اللون"}, "slug": "color", "value": {"en":"Red","ar":"أحمر"} }
+        // ]}
         $variants = [];
         if (isset($rawProduct['variants']) && is_array($rawProduct['variants'])) {
             foreach ($rawProduct['variants'] as $v) {
                 $attributes = [];
                 if (isset($v['attributes']) && is_array($v['attributes'])) {
                     foreach ($v['attributes'] as $a) {
-                        $val = is_array($a['value'] ?? null)
+                        // name هو كائن {en: '...', ar: '...'} وليس string
+                        $attrName = is_array($a['name'] ?? null)
+                            ? ($a['name']['ar'] ?? $a['name']['en'] ?? '')
+                            : (string) ($a['name'] ?? $a['slug'] ?? '');
+
+                        // value هو كائن {en: '...', ar: '...'} وليس string
+                        $attrValue = is_array($a['value'] ?? null)
                             ? ($a['value']['ar'] ?? $a['value']['en'] ?? '')
                             : (string) ($a['value'] ?? '');
 
+                        // زد لا تُرجع attribute_id أو id في كائن الـ attribute
+                        // المعرف الوحيد هو slug
                         $attributes[] = new ProductAttributeData(
-                            id: (string) ($a['attribute_id'] ?? $a['id'] ?? ''),
-                            valueId: (string) ($a['id'] ?? ''),
-                            name: (string) ($a['name'] ?? $a['slug'] ?? ''),
-                            value: $val
+                            id: (string) ($a['slug'] ?? ''),
+                            valueId: null,
+                            name: $attrName,
+                            value: $attrValue
                         );
                     }
                 }
@@ -368,25 +381,70 @@ class ProductData extends Data
             }
         }
 
+        // ── استخراج الخيارات (Options) ────────────────────────────────────────
+        // بنية زد الحقيقية للخيار:
+        // {
+        //   "name":   {"en": "Color", "ar": "اللون"},
+        //   "slug":   "color",
+        //   "values": {"en": ["Red", "Blue"], "ar": ["أحمر", "أزرق"]}
+        // }
+        // ملاحظة: لا يوجد حقل "id" في options زد، المعرف هو "slug"
+        // و values ليست مصفوفة كائنات بل كائن {en:[...], ar:[...]}
         $customOptions = [];
         if (isset($rawProduct['options']) && is_array($rawProduct['options'])) {
             foreach ($rawProduct['options'] as $opt) {
                 $choices = [];
-                $rawChoices = $opt['choices'] ?? $opt['options'] ?? [];
-                if (is_array($rawChoices)) {
-                    foreach ($rawChoices as $idx => $c) {
-                        $choices[] = [
-                            'id' => is_array($c) ? (string) ($c['id'] ?? $idx) : (string) $c,
-                            'label' => is_array($c) ? ($c['label']['ar'] ?? $c['label']['en'] ?? (string) ($c['label'] ?? '')) : (string) $c,
-                        ];
+
+                // البنية الحقيقية: values = {"en": [...], "ar": [...]}
+                $rawValues = $opt['values'] ?? null;
+                if (is_array($rawValues)) {
+                    $arValues = $rawValues['ar'] ?? [];
+                    $enValues = $rawValues['en'] ?? [];
+
+                    if (!empty($arValues) || !empty($enValues)) {
+                        // دمج القيم العربية والإنجليزية بالفهرس
+                        $count = max(count($arValues), count($enValues));
+                        for ($i = 0; $i < $count; $i++) {
+                            $label = $arValues[$i] ?? $enValues[$i] ?? '';
+                            $choices[] = [
+                                'id'    => (string) $i,  // زد لا تُرجع ID للقيمة
+                                'label' => (string) $label,
+                            ];
+                        }
+                    } else {
+                        // Fallback: قد تكون values مصفوفة عادية من strings
+                        foreach ($rawValues as $idx => $val) {
+                            if (is_string($val) || is_numeric($val)) {
+                                $choices[] = ['id' => (string) $idx, 'label' => (string) $val];
+                            }
+                        }
+                    }
+                } else {
+                    // Fallback للبنى القديمة: choices أو options
+                    $fallbackChoices = $opt['choices'] ?? $opt['options'] ?? [];
+                    if (is_array($fallbackChoices)) {
+                        foreach ($fallbackChoices as $idx => $c) {
+                            $choices[] = [
+                                'id'    => is_array($c) ? (string) ($c['id'] ?? $idx) : (string) $idx,
+                                'label' => is_array($c)
+                                    ? ($c['label']['ar'] ?? $c['label']['en'] ?? (string) ($c['label'] ?? ''))
+                                    : (string) $c,
+                            ];
+                        }
                     }
                 }
 
+                // label الخيار: name هو كائن {en, ar}
+                $optLabel = is_array($opt['name'] ?? null)
+                    ? ($opt['name']['ar'] ?? $opt['name']['en'] ?? '')
+                    : (string) ($opt['name'] ?? '');
+
+                // id الخيار: زد تستخدم slug كمعرف، لا يوجد حقل id
                 $customOptions[] = new ProductCustomOptionData(
-                    id: (string) ($opt['id'] ?? ''),
-                    type: (string) ($opt['type'] ?? 'radio'),
-                    label: is_array($opt['name'] ?? null) ? ($opt['name']['ar'] ?? $opt['name']['en'] ?? '') : (string) ($opt['name'] ?? ''),
-                    isRequired: (bool) ($opt['is_required'] ?? false),
+                    id: (string) ($opt['slug'] ?? $opt['id'] ?? ''),
+                    type: (string) ($opt['type'] ?? 'select'),
+                    label: $optLabel,
+                    isRequired: (bool) ($opt['is_required'] ?? true),
                     choices: $choices
                 );
             }
@@ -397,16 +455,20 @@ class ProductData extends Data
                 if (is_array($rawChoices)) {
                     foreach ($rawChoices as $c) {
                         $choices[] = [
-                            'id' => (string) $c['id'],
-                            'label' => is_array($c['label'] ?? null) ? ($c['label']['ar'] ?? $c['label']['en'] ?? '') : (string) ($c['label'] ?? $c['value'] ?? ''),
+                            'id'    => (string) ($c['id'] ?? ''),
+                            'label' => is_array($c['label'] ?? null)
+                                ? ($c['label']['ar'] ?? $c['label']['en'] ?? '')
+                                : (string) ($c['label'] ?? $c['value'] ?? ''),
                         ];
                     }
                 }
 
                 $customOptions[] = new ProductCustomOptionData(
-                    id: (string) $opt['id'],
+                    id: (string) ($opt['id'] ?? ''),
                     type: (string) ($opt['type'] ?? ''),
-                    label: is_array($opt['label'] ?? null) ? ($opt['label']['ar'] ?? $opt['label']['en'] ?? '') : (string) ($opt['label'] ?? ''),
+                    label: is_array($opt['label'] ?? null)
+                        ? ($opt['label']['ar'] ?? $opt['label']['en'] ?? '')
+                        : (string) ($opt['label'] ?? ''),
                     isRequired: (bool) ($opt['is_required'] ?? false),
                     choices: $choices
                 );
@@ -429,8 +491,18 @@ class ProductData extends Data
             }
         }
 
+        // ── حساب حالة المنتج بدقة ───────────────────────────────────────────────
         $isPublished = (bool) ($rawProduct['is_published'] ?? true);
-        $status = $isPublished ? 'sale' : (($rawProduct['is_draft'] ?? false) ? 'hidden' : 'sale');
+        $quantity    = (int) ($rawProduct['quantity']     ?? 0);
+        $isInfinite  = (bool) ($rawProduct['is_infinite'] ?? false);
+
+        if (! $isPublished) {
+            $status = 'hidden';
+        } elseif (! $isInfinite && $quantity <= 0) {
+            $status = 'out';
+        } else {
+            $status = 'sale';
+        }
 
         return new self(
             id: (string) $rawProduct['id'],
@@ -463,9 +535,14 @@ class ProductData extends Data
             minOrderQuantity: isset($rawProduct['purchase_restrictions']['min_quantity_per_cart']) ? (int) $rawProduct['purchase_restrictions']['min_quantity_per_cart'] : null,
             maxOrderQuantity: isset($rawProduct['purchase_restrictions']['max_quantity_per_cart']) ? (int) $rawProduct['purchase_restrictions']['max_quantity_per_cart'] : null,
             seoTitleAr: (string) ($rawProduct['seo']['title']['ar'] ?? ''),
-            seoTitleEn: (string) ($rawProduct['seo']['title']['en'] ?? null),
+            // (string) على null يُعطي "" وليس null — نستخدم empty check
+            seoTitleEn: ! empty($rawProduct['seo']['title']['en'])
+                ? (string) $rawProduct['seo']['title']['en']
+                : null,
             seoDescriptionAr: (string) ($rawProduct['seo']['description']['ar'] ?? ''),
-            seoDescriptionEn: (string) ($rawProduct['seo']['description']['en'] ?? null),
+            seoDescriptionEn: ! empty($rawProduct['seo']['description']['en'])
+                ? (string) $rawProduct['seo']['description']['en']
+                : null,
             seoSlug: (string) ($rawProduct['slug'] ?? ''),
             keywords: is_array($rawProduct['keywords'] ?? null) ? $rawProduct['keywords'] : [],
             platform: 'zid',

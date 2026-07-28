@@ -68,6 +68,7 @@ class ZidProvider implements PlatformProvider
             'X-Manager-Token' => $managerToken ?? '',
             'Accept-Language' => 'ar',
             'Accept' => 'application/json',
+            ''
         ];
 
         // 2. Fetch User Profile and Store Profile from Zid API
@@ -222,13 +223,14 @@ class ZidProvider implements PlatformProvider
         $catId = $filters['category_id'] ?? ($filters['category'] ?? null);
 
         $params = array_filter([
-            'page' => $filters['page'] ?? 1,
-            'page_size' => $filters['limit'] ?? 15,
-            'search' => $filters['search'] ?? null,
-            'categories' => $catId,
-            'category' => $catId,
+            'page'         => (int) ($filters['page'] ?? 1),
+            'page_size'    => (int) ($filters['limit'] ?? 15),
+            // زد تستخدم 'q' للبحث، وليس 'search'
+            'q'            => $filters['search'] ?? null,
+            // زد تستخدم 'categories' فقط، وليس 'category'
+            'categories'   => $catId,
             'is_published' => $isPublished,
-            'in_stock' => $inStock,
+            'in_stock'     => $inStock,
         ], fn ($value) => $value !== null && $value !== '');
 
         $response = $this->apiClient($oauthToken)->get('/managers/store/products/', $params);
@@ -271,25 +273,27 @@ class ZidProvider implements PlatformProvider
             }
         }
 
-        $json = $response->json();
-        $items = $json['results'] ?? ($json['products'] ?? ($json['data'] ?? []));
-        $zidPaging = $json['paging'] ?? ($json['pagination'] ?? []);
+        $json    = $response->json();
+        $items   = $json['results'] ?? ($json['products'] ?? ($json['data'] ?? []));
 
         $products = [];
         foreach ($items as $item) {
             $products[] = ProductData::fromZid($item);
         }
 
-        $currentPage = (int) ($zidPaging['page'] ?? $zidPaging['current_page'] ?? $filters['page'] ?? 1);
-        $perPage     = (int) ($zidPaging['page_size'] ?? $zidPaging['per_page'] ?? $filters['limit'] ?? 15);
-        $totalCount  = (int) ($zidPaging['count'] ?? $zidPaging['total'] ?? $json['count'] ?? 0);
-        $totalPages  = (int) ($zidPaging['total_pages'] ?? ($perPage > 0 ? ceil($totalCount / $perPage) : 1));
+        // ─── Pagination زد الحقيقية: تُرجع في root الاستجابة مباشرة، وليس في كائن فرعي ───
+        // { "page": 1, "page_size": 15, "count": 120, "results": [...] }
+        $currentPage = (int) ($json['page']      ?? $filters['page']  ?? 1);
+        $perPage     = (int) ($json['page_size'] ?? $filters['limit'] ?? 15);
+        $totalCount  = (int) ($json['count']     ?? 0);
+        $totalPages  = ($perPage > 0) ? (int) ceil($totalCount / $perPage) : 1;
+        $totalPages  = max(1, $totalPages);
 
         return [
-            'data' => $products,
+            'data'       => $products,
             'pagination' => [
                 'currentPage' => $currentPage,
-                'totalPages'  => max(1, $totalPages),
+                'totalPages'  => $totalPages,
                 'totalCount'  => $totalCount,
                 'perPage'     => $perPage,
                 'hasNext'     => $currentPage < $totalPages,
@@ -487,10 +491,12 @@ class ZidProvider implements PlatformProvider
         $storeId = $token->merchant;
 
         $headers = [
-            'Authorization' => 'Bearer '.$accessToken,
+            'Authorization'   => 'Bearer '.$accessToken,
             'X-Manager-Token' => $managerToken ?? '',
+            // مطلوب من زد للحصول على صلاحيات المدير وبياناته الكاملة
+            'Role'            => 'Manager',
             'Accept-Language' => 'ar',
-            'Accept' => 'application/json',
+            'Accept'          => 'application/json',
         ];
 
         if (! empty($storeId)) {
