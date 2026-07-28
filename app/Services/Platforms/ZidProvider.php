@@ -223,8 +223,9 @@ class ZidProvider implements PlatformProvider
         $catId = $filters['category_id'] ?? ($filters['category'] ?? null);
 
         $params = array_filter([
-            'page'         => (int) ($filters['page'] ?? 1),
-            'page_size'    => (int) ($filters['limit'] ?? 15),
+              'page' => $filters['page'] ?? 1,
+            'page_size' => $filters['limit'] ?? 15,
+    
             // زد تستخدم 'q' للبحث، وليس 'search'
             'q'            => $filters['search'] ?? null,
             // زد تستخدم 'categories' فقط، وليس 'category'
@@ -273,27 +274,25 @@ class ZidProvider implements PlatformProvider
             }
         }
 
-        $json    = $response->json();
-        $items   = $json['results'] ?? ($json['products'] ?? ($json['data'] ?? []));
+        $json = $response->json();
+        $items = $json['results'] ?? ($json['products'] ?? ($json['data'] ?? []));
+        $zidPaging = $json['paging'] ?? ($json['pagination'] ?? []);
 
         $products = [];
         foreach ($items as $item) {
             $products[] = ProductData::fromZid($item);
         }
 
-        // ─── Pagination زد الحقيقية: تُرجع في root الاستجابة مباشرة، وليس في كائن فرعي ───
-        // { "page": 1, "page_size": 15, "count": 120, "results": [...] }
-        $currentPage = (int) ($json['page']      ?? $filters['page']  ?? 1);
-        $perPage     = (int) ($json['page_size'] ?? $filters['limit'] ?? 15);
-        $totalCount  = (int) ($json['count']     ?? 0);
-        $totalPages  = ($perPage > 0) ? (int) ceil($totalCount / $perPage) : 1;
-        $totalPages  = max(1, $totalPages);
+        $currentPage = (int) ($zidPaging['page'] ?? $zidPaging['current_page'] ?? $filters['page'] ?? 1);
+        $perPage     = (int) ($zidPaging['page_size'] ?? $zidPaging['per_page'] ?? $filters['limit'] ?? 15);
+        $totalCount  = (int) ($zidPaging['count'] ?? $zidPaging['total'] ?? $json['count'] ?? 0);
+        $totalPages  = (int) ($zidPaging['total_pages'] ?? ($perPage > 0 ? ceil($totalCount / $perPage) : 1));
 
         return [
-            'data'       => $products,
+            'data' => $products,
             'pagination' => [
                 'currentPage' => $currentPage,
-                'totalPages'  => $totalPages,
+                'totalPages'  => max(1, $totalPages),
                 'totalCount'  => $totalCount,
                 'perPage'     => $perPage,
                 'hasNext'     => $currentPage < $totalPages,

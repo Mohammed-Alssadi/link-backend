@@ -173,7 +173,14 @@ class StoreProfileData extends Data
         }
 
         // Social
-        // \u0645\u0644\u0627\u062d\u0638\u0629: whatsapp \u064a\u0623\u062a\u064a \u0645\u0646 $socialData\u060c \u0648\u0644\u064a\u0633 \u0645\u0646 $store['phone']\n        // \u0648 telegram \u0648youtube \u0648maroof \u0643\u0627\u0646\u062a \u0645\u0641\u0642\u0648\u062f\u0629 \u0633\u0627\u0628\u0642\u0627\u064b\n        $social = new StoreSocialData(\n            whatsapp:  (string) ($socialData['whatsapp']  ?? $store['phone'] ?? ''),\n            twitter:   (string) ($socialData['twitter']   ?? ''),\n            instagram: (string) ($socialData['instagram'] ?? ''),\n            snapchat:  (string) ($socialData['snapchat']  ?? ''),\n            telegram:  (string) ($socialData['telegram']  ?? ''),\n            youtube:   (string) ($socialData['youtube']   ?? ''),\n            maroof:    (string) ($socialData['maroof']    ?? ''),\n            facebook:  (string) ($socialData['facebook']  ?? ''),\n            tiktok:    (string) ($socialData['tiktok']    ?? '')\n        );
+        $social = new StoreSocialData(
+            whatsapp: (string) ($store['phone'] ?? ''),
+            twitter: (string) ($socialData['twitter'] ?? ''),
+            instagram: (string) ($socialData['instagram'] ?? ''),
+            snapchat: (string) ($socialData['snapchat'] ?? ''),
+            facebook: (string) ($socialData['facebook'] ?? ''),
+            tiktok: (string) ($socialData['tiktok'] ?? '')
+        );
 
         // Localization
         $localization = null;

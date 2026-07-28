@@ -29,11 +29,11 @@ class ProductFilterRequest extends FormRequest
     public function validatedFilters(): array
     {
         $raw = [
-            'page'        => max(1, (int) $this->query('page', 1)),
-            'limit'       => (int) $this->query('limit', 15),
-            'search'      => $this->query('search'),
-            'category_id' => $this->query('category_id'),
-            'status'      => $this->query('status'),
+            'page' => (int) $this->query('page', 1),
+            'limit' => (int) $this->query('limit', 15),
+            'search' => $this->query('search'),
+            'category' => $this->query('category'),
+            'status' => $this->query('status'),
         ];
 
         return array_filter($raw, fn ($value) => $value !== null && $value !== '');
