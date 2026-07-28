@@ -3,7 +3,6 @@
 namespace App\Services\Platforms;
 
 use App\Contracts\PlatformProvider;
-use App\Data\Products\ProductData;
 use App\Data\StoreProfileData;
 use App\Data\UserProfileData;
 use App\Models\OauthToken;
@@ -162,144 +161,163 @@ class SallaProvider implements PlatformProvider
     }
 
     /**
-     * جلب قائمة المنتجات الحية مباشرة من API سلة تحول لـ ProductData DTOs
-     *
-     * @return ProductData[]
+     * تنفيذ طلب البروكسي الديناميكي الشفاف لمنصة سلة
      */
-    public function getProducts(OauthToken $oauthToken, array $filters = []): array
+    public function proxyRequest(OauthToken $oauthToken, string $method, string $path, array $queryParams, array $body = []): array
     {
-        $catId = $filters['category'] ?? ($filters['category_id'] ?? null);
+        $cleanPath = '/' . ltrim($path, '/');
 
-        $params = array_filter([
-            'page' => $filters['page'] ?? 1,
-            'per_page' => $filters['limit'] ?? 15,
-            'keyword' => $filters['search'] ?? null,
-            'category' => $catId,
-            'status' => $filters['status'] ?? null,
-
-        ], fn ($value) => $value !== null && $value !== '');
-
-        $response = $this->apiClient($oauthToken)->get('/products', $params);
-
-        if (! $response->successful()) {
-            if ($response->status() === 401) {
-                try {
-                    $oauthToken = $this->refreshToken($oauthToken);
-                    $response = $this->apiClient($oauthToken)->get('/products', $params);
-                } catch (\Throwable $e) {
-                    \Illuminate\Support\Facades\Log::error("[Salla Token Refresh Error]: ".$e->getMessage());
-                }
-            }
-            if (! $response->successful()) {
-                if ($response->status() === 404 || $response->status() === 422) {
-                    return [
-                        'data' => [],
-                        'pagination' => [
-                            'currentPage' => (int) ($filters['page'] ?? 1),
-                            'totalPages' => 1,
-                            'totalCount' => 0,
-                            'perPage' => (int) ($filters['limit'] ?? 15),
-                            'hasNext' => false,
-                            'hasPrev' => false,
-                        ],
-                    ];
-                }
-                throw new RuntimeException('فشل جلب قائمة المنتجات من منصة سلة: '.$response->body());
-            }
+        // 1. حماية من اجتياز المسار (Path Traversal)
+        if (str_contains($cleanPath, '..')) {
+            return [
+                'status' => 403,
+                'body' => ['success' => false, 'message' => 'مسار غير صالح (Path Traversal)'],
+            ];
         }
 
-        $json = $response->json();
-        $items = $json['data'] ?? [];
-        $sallaPagination = $json['pagination'] ?? [];
+        // 2. حماية قائمة المسارات المسموحة (SSRF Whitelist)
+        $allowedPrefixes = ['/products', '/categories', '/orders', '/customers', '/store', '/profile', '/attributes', '/badges', '/locations'];
+        $isAllowed = $cleanPath === '/' || $cleanPath === '' || collect($allowedPrefixes)->contains(fn ($prefix) => $cleanPath === $prefix || str_starts_with($cleanPath, $prefix . '/'));
 
-        $products = [];
-        foreach ($items as $item) {
-            $products[] = ProductData::fromSalla($item);
+        if (! $isAllowed) {
+            return [
+                'status' => 403,
+                'body' => ['success' => false, 'message' => 'مسار غير مصرح به (Proxy Whitelist)'],
+            ];
         }
 
-        $currentPage = (int) ($sallaPagination['currentPage'] ?? $sallaPagination['current_page'] ?? $filters['page'] ?? 1);
-        $totalPages  = (int) ($sallaPagination['totalPages'] ?? $sallaPagination['total_pages'] ?? 1);
-        $totalCount  = (int) ($sallaPagination['total'] ?? $sallaPagination['count'] ?? 0);
-        $perPage     = (int) ($sallaPagination['perPage'] ?? $sallaPagination['per_page'] ?? $filters['limit'] ?? 15);
+        // 3. اعتراض حالة نفاد المخزون لمنع أخطاء 422 وإرجاع مصفوفة فارغة منظمة
+        if (($queryParams['status'] ?? '') === 'out_of_stock' && ($cleanPath === '/products' || $cleanPath === '/products/')) {
+            return [
+                'status' => 200,
+                'body' => [
+                    'success' => true,
+                    'data' => [],
+                    'pagination' => [
+                        'currentPage' => 1,
+                        'totalPages' => 1,
+                        'totalCount' => 0,
+                        'perPage' => 15,
+                        'hasNext' => false,
+                        'hasPrev' => false,
+                    ],
+                ],
+            ];
+        }
+
+        $isListPath = in_array($cleanPath, ['/products', '/products/', '/categories', '/categories/']);
+        $normalizedQuery = $isListPath ? $this->normalizeQueryParams($queryParams, $cleanPath) : $queryParams;
+
+        $client = $this->apiClient($oauthToken);
+        $methodUpper = strtoupper($method);
+
+        $timeout = in_array($methodUpper, ['POST', 'PUT', 'PATCH', 'DELETE']) ? 60 : 45;
+        $client = $client->timeout($timeout);
+
+        $response = match ($methodUpper) {
+            'GET' => $client->get($cleanPath, $normalizedQuery),
+            'POST' => $client->post($cleanPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
+            'PUT' => $client->put($cleanPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
+            'PATCH' => $client->patch($cleanPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
+            'DELETE' => $client->delete($cleanPath, $normalizedQuery),
+            default => null,
+        };
+
+        if (! $response) {
+            return [
+                'status' => 405,
+                'body' => ['success' => false, 'message' => 'طريقة الطلب غير مدعومة'],
+            ];
+        }
+
+        $statusCode = $response->status();
+        $jsonData = $response->json();
+
+        if ($statusCode >= 200 && $statusCode < 300 && is_array($jsonData)) {
+            if ($methodUpper === 'GET' && $isListPath) {
+                $normalizedResponse = $this->normalizeProxyResponse($jsonData, $cleanPath, $queryParams);
+                return ['status' => $statusCode, 'body' => $normalizedResponse];
+            }
+            return ['status' => $statusCode, 'body' => $jsonData];
+        }
+
+        return ['status' => $statusCode, 'body' => $jsonData ?? ['success' => false, 'message' => $response->body()]];
+    }
+
+    private function isSkuPattern(string $str): bool
+    {
+        $trimmed = trim($str);
+        if (empty($trimmed)) {
+            return false;
+        }
+
+        $hasDashesOrDots = preg_match('/[-.]/', $trimmed);
+        $isAlphanumericAndLong = preg_match('/^[a-zA-Z0-9]{6,}$/', $trimmed);
+        $isPureNumberAndLong = preg_match('/^[0-9]{8,}$/', $trimmed);
+
+        return (bool) ($hasDashesOrDots || $isAlphanumericAndLong || $isPureNumberAndLong);
+    }
+
+    private function normalizeQueryParams(array $query, string $path): array
+    {
+        $page = (int) ($query['page'] ?? 1);
+        $limit = (int) ($query['limit'] ?? 15);
+        $normalized = [];
+
+        $normalized['page'] = $page;
+        $normalized['per_page'] = $limit;
+
+        if (! empty($query['search'])) {
+            $normalized['keyword'] = $query['search'];
+        }
+
+        if (! empty($query['category_id'])) {
+            $normalized['categories'] = [$query['category_id']];
+        }
+
+        $finalQuery = array_merge($query, $normalized);
+        unset($finalQuery['limit'], $finalQuery['search'], $finalQuery['category_id'], $finalQuery['is_published']);
+
+        return $finalQuery;
+    }
+
+    private function normalizeProxyResponse(array $rawData, string $path, array $originalQuery): array
+    {
+        $page = (int) ($originalQuery['page'] ?? 1);
+        $limit = (int) ($originalQuery['limit'] ?? 15);
+
+        $unifiedData = $rawData['data'] ?? [];
+        $pagination = [
+            'currentPage' => $page,
+            'totalPages' => 1,
+            'totalCount' => count($unifiedData),
+            'perPage' => $limit,
+            'hasNext' => false,
+            'hasPrev' => $page > 1,
+        ];
+
+        if (! empty($rawData['pagination'])) {
+            $p = $rawData['pagination'];
+            $currentPage = (int) ($p['currentPage'] ?? $p['current_page'] ?? $page);
+            $totalPages = (int) ($p['totalPages'] ?? $p['total_pages'] ?? 1);
+            $totalCount = (int) ($p['total'] ?? $p['count'] ?? count($unifiedData));
+            $perPage = (int) ($p['perPage'] ?? $p['per_page'] ?? $limit);
+
+            $pagination = [
+                'currentPage' => $currentPage,
+                'totalPages' => max(1, $totalPages),
+                'totalCount' => $totalCount,
+                'perPage' => $perPage,
+                'hasNext' => $currentPage < $totalPages,
+                'hasPrev' => $currentPage > 1,
+            ];
+        }
 
         return [
-            'data' => $products,
-            'pagination' => [
-                'currentPage' => $currentPage,
-                'totalPages'  => $totalPages,
-                'totalCount'  => $totalCount,
-                'perPage'     => $perPage,
-                'hasNext'     => $currentPage < $totalPages,
-                'hasPrev'     => $currentPage > 1,
-            ],
+            'success' => true,
+            'data' => $unifiedData,
+            'pagination' => $pagination,
         ];
-    }
-
-    /**
-     * جلب بيانات منتج محدد بالـ ID حية من API سلة وتحول لـ ProductData DTO
-     */
-    public function getProduct(OauthToken $oauthToken, string $productId): ProductData
-    {
-        $response = $this->apiClient($oauthToken)->get("/products/{$productId}");
-
-        if (! $response->successful()) {
-            throw new RuntimeException("فشل جلب المنتج رقم [{$productId}] من منصة سلة");
-        }
-
-        $item = $response->json('data') ?? [];
-
-        return ProductData::fromSalla($item);
-    }
-
-    /**
-     * تحديث بيانات المنتج في منصة سلة
-     */
-    public function updateProduct(OauthToken $oauthToken, string $productId, array $data): ProductData
-    {
-        $response = $this->apiClient($oauthToken)->put("/products/{$productId}", $data);
-
-        if (! $response->successful()) {
-            $errMsg = $response->json('message') ?? "فشل تحديث المنتج رقم [{$productId}] في منصة سلة";
-            throw new RuntimeException(is_array($errMsg) ? json_encode($errMsg) : $errMsg);
-        }
-
-        $item = $response->json('data') ?? [];
-
-        return ProductData::fromSalla($item);
-    }
-
-    /**
-     * حذف المنتج من منصة سلة
-     */
-    public function deleteProduct(OauthToken $oauthToken, string $productId): bool
-    {
-        $response = $this->apiClient($oauthToken)->delete("/products/{$productId}");
-
-        if (! $response->successful()) {
-            throw new RuntimeException("فشل حذف المنتج رقم [{$productId}] من منصة سلة");
-        }
-
-        return true;
-    }
-
-    /**
-     * جلب قائمة التصنيفات الحية من منصة سلة
-     */
-    public function getCategories(OauthToken $oauthToken): array
-    {
-        $response = $this->apiClient($oauthToken)->get('/categories');
-
-        if (! $response->successful()) {
-            if ($response->status() === 401) {
-                $oauthToken = $this->refreshToken($oauthToken);
-                $response = $this->apiClient($oauthToken)->get('/categories');
-            }
-            if (! $response->successful()) {
-                return [];
-            }
-        }
-
-        return $response->json('data') ?? [];
     }
 
     /**

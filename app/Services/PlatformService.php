@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Data\Products\ProductData;
 use App\Data\StoreProfileData;
 use App\Data\UserProfileData;
 use App\Models\OauthToken;
@@ -53,105 +52,14 @@ class PlatformService
     }
 
     /**
-     * جلب قائمة منتجات التاجر وتجديد التوكن تلقائياً عند اقتراب انتهائه
-     *
-     * @return ProductData[]
+     * تنفيذ طلب البروكسي الديناميكي الشفاف مع التجديد التلقائي لتوكن المنصة
      */
-    public function getProducts(User $user, array $filters = []): array
+    public function proxy(User $user, string $method, string $path, array $queryParams, array $body = []): array
     {
         $token = $this->getValidToken($user);
         $provider = $this->platformFactory->make($token->platform);
 
-        return $provider->getProducts($token, $filters);
-    }
-
-    /**
-     * جلب بيانات منتج محدد حية برقم الـ ID وتجديد التوكن تلقائياً عند اقتراب انتهائه
-     */
-    public function getProduct(User $user, string $productId): ProductData
-    {
-        $token = $this->getValidToken($user);
-        $provider = $this->platformFactory->make($token->platform);
-
-        return $provider->getProduct($token, $productId);
-    }
-
-    /**
-     * تحديث بيانات منتج محدد حية وتجديد التوكن تلقائياً عند اقتراب انتهائه
-     */
-    public function updateProduct(User $user, string $productId, array $data): ProductData
-    {
-        $token = $this->getValidToken($user);
-        $provider = $this->platformFactory->make($token->platform);
-
-        return $provider->updateProduct($token, $productId, $data);
-    }
-
-    /**
-     * حذف منتج محدد وتجديد التوكن تلقائياً عند اقتراب انتهائه
-     */
-    public function deleteProduct(User $user, string $productId): bool
-    {
-        $token = $this->getValidToken($user);
-        $provider = $this->platformFactory->make($token->platform);
-
-        return $provider->deleteProduct($token, $productId);
-    }
-
-    /**
-     * جلب تصنيفات المتجر حية وتجديد التوكن تلقائياً عند اقتراب انتهائه
-     */
-    public function getCategories(User $user): array
-    {
-        $token = $this->getValidToken($user);
-        $provider = $this->platformFactory->make($token->platform);
-
-        return $provider->getCategories($token);
-    }
-
-    /**
-     * جلب سمات المتجر العامة وتجديد التوكن تلقائياً (خاصة بزد)
-     */
-    public function getAttributes(User $user): array
-    {
-        $token = $this->getValidToken($user);
-        $provider = $this->platformFactory->make($token->platform);
-
-        if (method_exists($provider, 'getAttributes')) {
-            return $provider->getAttributes($token);
-        }
-
-        return [];
-    }
-
-    /**
-     * إنشاء سمة متجر عامة جديدة وتجديد التوكن تلقائياً (خاصة بزد)
-     */
-    public function createAttribute(User $user, array $data): array
-    {
-        $token = $this->getValidToken($user);
-        $provider = $this->platformFactory->make($token->platform);
-
-        if (method_exists($provider, 'createAttribute')) {
-            return $provider->createAttribute($token, $data);
-        }
-
-        return [];
-    }
-
-    /**
-     * إضافة قيمة مسبقة لسمة متجر وتجديد التوكن تلقائياً (خاصة بزد)
-     */
-    public function addAttributePreset(User $user, string $attributeId, array $data): array
-    {
-        $token = $this->getValidToken($user);
-        $provider = $this->platformFactory->make($token->platform);
-
-        if (method_exists($provider, 'addAttributePreset')) {
-            return $provider->addAttributePreset($token, $attributeId, $data);
-        }
-
-        return [];
+        return $provider->proxyRequest($token, $method, $path, $queryParams, $body);
     }
 
     /**

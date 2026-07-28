@@ -2,7 +2,6 @@
 
 namespace App\Contracts;
 
-use App\Data\Products\ProductData;
 use App\Data\StoreProfileData;
 use App\Data\UserProfileData;
 use App\Models\OauthToken;
@@ -36,29 +35,7 @@ interface PlatformProvider
     public function getStoreProfile(OauthToken $oauthToken): StoreProfileData;
 
     /**
-     * جلب قائمة المنتجات الحية وتغليفها في مصفوفة ProductData DTOs
-     *
-     * @return ProductData[]
+     * تنفيذ طلب البروكسي الديناميكي الشفاف لجميع عمليات الـ API (GET, POST, PUT, PATCH, DELETE)
      */
-    public function getProducts(OauthToken $oauthToken, array $filters = []): array;
-
-    /**
-     * جلب بيانات منتج محدد حية برقم الـ ID وتغليفها في ProductData DTO
-     */
-    public function getProduct(OauthToken $oauthToken, string $productId): ProductData;
-
-    /**
-     * تحديث بيانات المنتج الحية على المنصة
-     */
-    public function updateProduct(OauthToken $oauthToken, string $productId, array $data): ProductData;
-
-    /**
-     * حذف المنتج الحية على المنصة
-     */
-    public function deleteProduct(OauthToken $oauthToken, string $productId): bool;
-
-    /**
-     * جلب تصنيفات المتجر الحية
-     */
-    public function getCategories(OauthToken $oauthToken): array;
+    public function proxyRequest(OauthToken $oauthToken, string $method, string $path, array $queryParams, array $body = []): array;
 }

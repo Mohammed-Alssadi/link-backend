@@ -3,7 +3,6 @@
 namespace App\Services\Platforms;
 
 use App\Contracts\PlatformProvider;
-use App\Data\Products\ProductData;
 use App\Data\StoreProfileData;
 use App\Data\UserProfileData;
 use App\Models\OauthToken;
@@ -68,7 +67,6 @@ class ZidProvider implements PlatformProvider
             'X-Manager-Token' => $managerToken ?? '',
             'Accept-Language' => 'ar',
             'Accept' => 'application/json',
-            ''
         ];
 
         // 2. Fetch User Profile and Store Profile from Zid API
@@ -202,276 +200,211 @@ class ZidProvider implements PlatformProvider
     }
 
     /**
-     * جلب قائمة المنتجات الحية من API زد وتغليفها في مصفوفة ProductData DTOs
-     *
-     * @return ProductData[]
+     * تنفيذ طلب البروكسي الديناميكي الشفاف لمنصة زد
      */
-    public function getProducts(OauthToken $oauthToken, array $filters = []): array
+    public function proxyRequest(OauthToken $oauthToken, string $method, string $path, array $queryParams, array $body = []): array
     {
-        $statusFilter = $filters['status'] ?? null;
-        $isPublished = null;
-        $inStock = null;
+        $cleanPath = '/' . ltrim($path, '/');
 
-        if ($statusFilter === 'sale') {
-            $isPublished = 'true';
-        } elseif ($statusFilter === 'hidden') {
-            $isPublished = 'false';
-        } elseif ($statusFilter === 'out') {
-            $inStock = 'false';
+        // 1. حماية من اجتياز المسار (Path Traversal)
+        if (str_contains($cleanPath, '..')) {
+            return [
+                'status' => 403,
+                'body' => ['success' => false, 'message' => 'مسار غير صالح (Path Traversal)'],
+            ];
         }
 
-        $catId = $filters['category_id'] ?? ($filters['category'] ?? null);
+        // 2. حماية قائمة المسارات المسموحة (SSRF Whitelist)
+        $allowedPrefixes = ['/products', '/categories', '/orders', '/customers', '/store', '/profile', '/attributes', '/badges', '/locations'];
+        $isAllowed = $cleanPath === '/' || $cleanPath === '' || collect($allowedPrefixes)->contains(fn ($prefix) => $cleanPath === $prefix || str_starts_with($cleanPath, $prefix . '/'));
 
-        $params = array_filter([
-              'page' => $filters['page'] ?? 1,
-            'page_size' => $filters['limit'] ?? 15,
-    
-            // زد تستخدم 'q' للبحث، وليس 'search'
-            'q'            => $filters['search'] ?? null,
-            // زد تستخدم 'categories' فقط، وليس 'category'
-            'categories'   => $catId,
-            'is_published' => $isPublished,
-            'in_stock'     => $inStock,
-        ], fn ($value) => $value !== null && $value !== '');
-
-        $response = $this->apiClient($oauthToken)->get('/managers/store/products/', $params);
-        if (! $response->successful()) {
-            $response = $this->apiClient($oauthToken)->get('/products/', $params);
+        if (! $isAllowed) {
+            return [
+                'status' => 403,
+                'body' => ['success' => false, 'message' => 'مسار غير مصرح به (Proxy Whitelist)'],
+            ];
         }
 
-        if (! $response->successful()) {
-            $errBody = $response->body();
-            if ($response->status() === 401 || $response->status() === 403 || str_contains($errBody, 'No such user')) {
-                try {
-                    $oauthToken = $this->refreshToken($oauthToken);
-                    $response = $this->apiClient($oauthToken)->get('/managers/store/products/', $params);
-                    if (! $response->successful()) {
-                        $response = $this->apiClient($oauthToken)->get('/products/', $params);
-                    }
-                } catch (\Throwable $e) {
-                    \Illuminate\Support\Facades\Log::error("[Zid Token Refresh Error]: ".$e->getMessage());
-                }
-            }
-            if (! $response->successful()) {
-                if ($response->status() === 404 || str_contains($response->body(), 'No such user')) {
-                    \Illuminate\Support\Facades\Log::warning("[Zid Products Warning]: Token invalid or user not found in Zid API.");
-                    return [
+        $isListPath = in_array($cleanPath, ['/products', '/products/', '/categories', '/categories/']);
+        $normalizedQuery = $isListPath ? $this->normalizeQueryParams($queryParams, $cleanPath) : $queryParams;
+
+        $targetPath = $this->mapZidPath($cleanPath);
+        $client = $this->apiClient($oauthToken);
+
+        $methodUpper = strtoupper($method);
+        $timeout = in_array($methodUpper, ['POST', 'PUT', 'PATCH', 'DELETE']) ? 60 : 45;
+        $client = $client->timeout($timeout);
+
+        $response = match ($methodUpper) {
+            'GET' => $client->get($targetPath, $normalizedQuery),
+            'POST' => $client->post($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
+            'PUT' => $client->put($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
+            'PATCH' => $client->patch($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
+            'DELETE' => $client->delete($targetPath, $normalizedQuery),
+            default => null,
+        };
+
+        if (! $response) {
+            return [
+                'status' => 405,
+                'body' => ['success' => false, 'message' => 'طريقة الطلب غير مدعومة'],
+            ];
+        }
+
+        $statusCode = $response->status();
+        $bodyText = $response->body();
+        $jsonData = $response->json();
+
+        // 3. اعتراض خطأ 404 لعدم تطابق المنتجات في زد وتحويله لرد ناجح فارغ
+        if ($statusCode === 404 && str_contains($cleanPath, 'products')) {
+            $errDetail = strtolower(is_array($jsonData) ? ($jsonData['detail'] ?? $bodyText) : $bodyText);
+            if (str_contains($errDetail, 'no product matches') || str_contains($errDetail, 'not found') || str_contains($errDetail, 'صفحة غير صحيحة')) {
+                return [
+                    'status' => 200,
+                    'body' => [
+                        'success' => true,
                         'data' => [],
                         'pagination' => [
-                            'currentPage' => (int) ($filters['page'] ?? 1),
+                            'currentPage' => 1,
                             'totalPages' => 1,
                             'totalCount' => 0,
-                            'perPage' => (int) ($filters['limit'] ?? 15),
+                            'perPage' => 15,
                             'hasNext' => false,
                             'hasPrev' => false,
                         ],
-                    ];
-                }
-                $errDetail = $response->json('message') ?? ($response->json('error') ?? $response->body());
-                $errStr = is_array($errDetail) ? json_encode($errDetail, JSON_UNESCAPED_UNICODE) : (string) $errDetail;
-                \Illuminate\Support\Facades\Log::error("[ZidProvider getProducts Error]: status {$response->status()}, detail: {$errStr}");
-                throw new RuntimeException('فشل جلب قائمة المنتجات من منصة زد: '.$errStr);
+                    ],
+                ];
             }
         }
 
-        $json = $response->json();
-        $items = $json['results'] ?? ($json['products'] ?? ($json['data'] ?? []));
-        $zidPaging = $json['paging'] ?? ($json['pagination'] ?? []);
-
-        $products = [];
-        foreach ($items as $item) {
-            $products[] = ProductData::fromZid($item);
+        if ($statusCode >= 200 && $statusCode < 300 && is_array($jsonData)) {
+            if ($methodUpper === 'GET' && $isListPath) {
+                $normalizedResponse = $this->normalizeProxyResponse($jsonData, $cleanPath, $queryParams);
+                return ['status' => $statusCode, 'body' => $normalizedResponse];
+            }
+            return ['status' => $statusCode, 'body' => $jsonData];
         }
 
-        $currentPage = (int) ($zidPaging['page'] ?? $zidPaging['current_page'] ?? $filters['page'] ?? 1);
-        $perPage     = (int) ($zidPaging['page_size'] ?? $zidPaging['per_page'] ?? $filters['limit'] ?? 15);
-        $totalCount  = (int) ($zidPaging['count'] ?? $zidPaging['total'] ?? $json['count'] ?? 0);
-        $totalPages  = (int) ($zidPaging['total_pages'] ?? ($perPage > 0 ? ceil($totalCount / $perPage) : 1));
+        return ['status' => $statusCode, 'body' => $jsonData ?? ['success' => false, 'message' => $bodyText]];
+    }
+
+    private function mapZidPath(string $path): string
+    {
+        $parts = array_values(array_filter(explode('/', $path), fn ($p) => $p !== ''));
+        $storeEntities = ['categories', 'orders', 'customers'];
+
+        if (count($parts) > 0 && in_array($parts[0], $storeEntities)) {
+            $entity = $parts[0];
+            $newPath = "/managers/store/{$entity}";
+
+            if (count($parts) > 1) {
+                $id = $parts[1];
+                $newPath .= "/{$id}";
+
+                $restOfPath = implode('/', array_slice($parts, 2));
+
+                if (empty($restOfPath) && in_array($entity, ['categories', 'orders'])) {
+                    $newPath .= '/view';
+                } elseif (! empty($restOfPath)) {
+                    $newPath .= "/{$restOfPath}";
+                }
+            }
+
+            if (! str_ends_with($newPath, '/')) {
+                $newPath .= '/';
+            }
+
+            return $newPath;
+        }
+
+        $finalPath = '/' . ltrim($path, '/');
+        if (! str_ends_with($finalPath, '/')) {
+            $finalPath .= '/';
+        }
+
+        return $finalPath;
+    }
+
+    private function isSkuPattern(string $str): bool
+    {
+        $trimmed = trim($str);
+        if (empty($trimmed)) {
+            return false;
+        }
+
+        $hasDashesOrDots = preg_match('/[-.]/', $trimmed);
+        $isAlphanumericAndLong = preg_match('/^[a-zA-Z0-9]{6,}$/', $trimmed);
+        $isPureNumberAndLong = preg_match('/^[0-9]{8,}$/', $trimmed);
+
+        return (bool) ($hasDashesOrDots || $isAlphanumericAndLong || $isPureNumberAndLong);
+    }
+
+    private function normalizeQueryParams(array $query, string $path): array
+    {
+        $page = (int) ($query['page'] ?? 1);
+        $limit = (int) ($query['limit'] ?? 15);
+        $normalized = [];
+
+        $normalized['page'] = $page;
+        $normalized['page_size'] = $limit;
+
+        if (! empty($query['search'])) {
+            $normalized['name'] = $query['search'];
+        }
+
+        if (! empty($query['category_id'])) {
+            $normalized['categories'] = $query['category_id'];
+        }
+
+        if (isset($query['is_published'])) {
+            $normalized['is_draft'] = $query['is_published'] === 'true' ? 'false' : 'true';
+        }
+
+        $finalQuery = array_merge($query, $normalized);
+        unset($finalQuery['limit'], $finalQuery['search'], $finalQuery['category_id'], $finalQuery['is_published']);
+
+        return $finalQuery;
+    }
+
+    private function normalizeProxyResponse(array $rawData, string $path, array $originalQuery): array
+    {
+        $page = (int) ($originalQuery['page'] ?? 1);
+        $limit = (int) ($originalQuery['limit'] ?? 15);
+        $pathLower = strtolower($path);
+
+        $unifiedData = [];
+        if (str_contains($pathLower, 'products')) {
+            $unifiedData = $rawData['results'] ?? ($rawData['products'] ?? []);
+        } elseif (str_contains($pathLower, 'categories')) {
+            $unifiedData = $rawData['categories'] ?? ($rawData['results'] ?? []);
+        } elseif (str_contains($pathLower, 'orders')) {
+            $unifiedData = $rawData['orders'] ?? ($rawData['results'] ?? []);
+        } elseif (str_contains($pathLower, 'customers')) {
+            $unifiedData = $rawData['customers'] ?? ($rawData['results'] ?? []);
+        } else {
+            $unifiedData = $rawData['data'] ?? ($rawData['results'] ?? ($rawData['categories'] ?? ($rawData['orders'] ?? ($rawData['customers'] ?? []))));
+            if (! is_array($unifiedData)) {
+                $unifiedData = [$rawData];
+            }
+        }
+
+        $totalCount = (int) ($rawData['count'] ?? ($rawData['total_categories_count'] ?? ($rawData['total_order_count'] ?? count($unifiedData))));
+        $totalPages = max(1, (int) ceil($totalCount / $limit));
+
+        $pagination = [
+            'currentPage' => $page,
+            'totalPages' => $totalPages,
+            'totalCount' => $totalCount,
+            'perPage' => $limit,
+            'hasNext' => $page < $totalPages,
+            'hasPrev' => $page > 1,
+        ];
 
         return [
-            'data' => $products,
-            'pagination' => [
-                'currentPage' => $currentPage,
-                'totalPages'  => max(1, $totalPages),
-                'totalCount'  => $totalCount,
-                'perPage'     => $perPage,
-                'hasNext'     => $currentPage < $totalPages,
-                'hasPrev'     => $currentPage > 1,
-            ],
+            'success' => true,
+            'data' => $unifiedData,
+            'pagination' => $pagination,
         ];
-    }
-
-    /**
-     * جلب بيانات منتج محدد حية من API زد وتغليفها في ProductData DTO
-     */
-    public function getProduct(OauthToken $oauthToken, string $productId): ProductData
-    {
-        $response = $this->apiClient($oauthToken)->get("/managers/store/products/{$productId}/");
-        if (! $response->successful()) {
-            $response = $this->apiClient($oauthToken)->get("/products/{$productId}/");
-        }
-
-        if (! $response->successful()) {
-            if ($response->status() === 401) {
-                try {
-                    $oauthToken = $this->refreshToken($oauthToken);
-                    $response = $this->apiClient($oauthToken)->get("/managers/store/products/{$productId}/");
-                    if (! $response->successful()) {
-                        $response = $this->apiClient($oauthToken)->get("/products/{$productId}/");
-                    }
-                } catch (\Throwable $e) {}
-            }
-            if (! $response->successful()) {
-                throw new RuntimeException("فشل جلب بيانات المنتج [{$productId}] من منصة زد");
-            }
-        }
-
-        $rawProduct = $response->json('product') ?? ($response->json('data') ?? $response->json());
-
-        if (empty($rawProduct['variants']) && (($rawProduct['has_options'] ?? false) || ($rawProduct['structure'] ?? '') === 'parent')) {
-            try {
-                $varResponse = $this->apiClient($oauthToken)->get("/managers/store/products/{$productId}/variants/");
-                if (! $varResponse->successful()) {
-                    $varResponse = $this->apiClient($oauthToken)->get("/products/{$productId}/variants/");
-                }
-                if ($varResponse->successful()) {
-                    $rawProduct['variants'] = $varResponse->json('results') ?? ($varResponse->json('variants') ?? ($varResponse->json('data') ?? []));
-                }
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning("[Zid Variants Fetch Warning]: ".$e->getMessage());
-            }
-        }
-
-        return ProductData::fromZid($rawProduct);
-    }
-
-    /**
-     * تحديث بيانات المنتج في منصة زد
-     */
-    public function updateProduct(OauthToken $oauthToken, string $productId, array $data): ProductData
-    {
-        $response = $this->apiClient($oauthToken)->patch("/managers/store/products/{$productId}/", $data);
-        if (! $response->successful()) {
-            $response = $this->apiClient($oauthToken)->patch("/products/{$productId}/", $data);
-        }
-
-        if (! $response->successful()) {
-            $errMsg = $response->json('message') ?? "فشل تحديث المنتج رقم [{$productId}] في منصة زد";
-            throw new RuntimeException(is_array($errMsg) ? json_encode($errMsg) : $errMsg);
-        }
-
-        $rawProduct = $response->json('product') ?? ($response->json('data') ?? $response->json());
-
-        return ProductData::fromZid($rawProduct);
-    }
-
-    /**
-     * حذف المنتج من منصة زد
-     */
-    public function deleteProduct(OauthToken $oauthToken, string $productId): bool
-    {
-        $response = $this->apiClient($oauthToken)->delete("/managers/store/products/{$productId}/");
-        if (! $response->successful()) {
-            $response = $this->apiClient($oauthToken)->delete("/products/{$productId}/");
-        }
-
-        if (! $response->successful()) {
-            throw new RuntimeException("فشل حذف المنتج رقم [{$productId}] من منصة زد");
-        }
-
-        return true;
-    }
-
-    /**
-     * جلب قائمة التصنيفات الحية من منصة زد
-     */
-    public function getCategories(OauthToken $oauthToken): array
-    {
-        $response = $this->apiClient($oauthToken)->get('/managers/store/categories/');
-        if (! $response->successful()) {
-            $response = $this->apiClient($oauthToken)->get('/categories/');
-        }
-
-        if (! $response->successful()) {
-            if ($response->status() === 401) {
-                try {
-                    $oauthToken = $this->refreshToken($oauthToken);
-                    $response = $this->apiClient($oauthToken)->get('/managers/store/categories/');
-                    if (! $response->successful()) {
-                        $response = $this->apiClient($oauthToken)->get('/categories/');
-                    }
-                } catch (\Throwable $e) {}
-            }
-            if (! $response->successful()) {
-                return [];
-            }
-        }
-
-        return $response->json('categories') ?? ($response->json('results') ?? ($response->json('data') ?? []));
-    }
-
-    /**
-     * جلب قائمة سمات المتجر العامة من منصة زد (Store Attributes)
-     */
-    public function getAttributes(OauthToken $oauthToken): array
-    {
-        $response = $this->apiClient($oauthToken)->get('/managers/store/attributes/');
-        if (! $response->successful()) {
-            $response = $this->apiClient($oauthToken)->get('/attributes/');
-        }
-
-        if (! $response->successful()) {
-            if ($response->status() === 401) {
-                try {
-                    $oauthToken = $this->refreshToken($oauthToken);
-                    $response = $this->apiClient($oauthToken)->get('/managers/store/attributes/');
-                    if (! $response->successful()) {
-                        $response = $this->apiClient($oauthToken)->get('/attributes/');
-                    }
-                } catch (\Throwable $e) {}
-            }
-            if (! $response->successful()) {
-                return [];
-            }
-        }
-
-        return $response->json('attributes') ?? ($response->json('results') ?? ($response->json('data') ?? []));
-    }
-
-    /**
-     * إنشاء سمة متجر عامة جديدة في منصة زد
-     */
-    public function createAttribute(OauthToken $oauthToken, array $data): array
-    {
-        $response = $this->apiClient($oauthToken)->post('/managers/store/attributes/', $data);
-        if (! $response->successful()) {
-            $response = $this->apiClient($oauthToken)->post('/attributes/', $data);
-        }
-
-        if (! $response->successful()) {
-            $errMsg = $response->json('message') ?? 'فشل إنشاء السمة العامة في منصة زد';
-            throw new RuntimeException(is_array($errMsg) ? json_encode($errMsg, JSON_UNESCAPED_UNICODE) : (string) $errMsg);
-        }
-
-        return $response->json('attribute') ?? ($response->json('data') ?? $response->json());
-    }
-
-    /**
-     * إضافة قيمة جاهزة (Preset) لسمة متجر في منصة زد
-     */
-    public function addAttributePreset(OauthToken $oauthToken, string $attributeId, array $data): array
-    {
-        $response = $this->apiClient($oauthToken)->post("/managers/store/attributes/{$attributeId}/presets/", $data);
-        if (! $response->successful()) {
-            $response = $this->apiClient($oauthToken)->post("/attributes/{$attributeId}/presets/", $data);
-        }
-
-        if (! $response->successful()) {
-            $errMsg = $response->json('message') ?? "فشل إضافة القيمة المسبقة للسمة رقم [{$attributeId}] في منصة زد";
-            throw new RuntimeException(is_array($errMsg) ? json_encode($errMsg, JSON_UNESCAPED_UNICODE) : (string) $errMsg);
-        }
-
-        return $response->json('preset') ?? ($response->json('data') ?? $response->json());
     }
 
     /**
