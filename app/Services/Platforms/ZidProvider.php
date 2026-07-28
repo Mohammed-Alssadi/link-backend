@@ -235,6 +235,15 @@ class ZidProvider implements PlatformProvider
         $timeout = in_array($methodUpper, ['POST', 'PUT', 'PATCH', 'DELETE']) ? 60 : 45;
         $client = $client->timeout($timeout);
 
+        if ($methodUpper === 'POST' && (request()->hasFile('image') || request()->hasFile('photo'))) {
+            $file = request()->file('image') ?? request()->file('photo');
+            $client = $client->attach('image', file_get_contents($file->getRealPath()), $file->getClientOriginalName());
+            $postFields = [];
+            if (request()->has('alt_text')) {
+                $postFields['alt_text'] = request()->input('alt_text');
+            }
+            $response = $client->post($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $postFields);
+        } else {
         $response = match ($methodUpper) {
             'GET' => $client->get($targetPath, $normalizedQuery),
             'POST' => $client->post($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
