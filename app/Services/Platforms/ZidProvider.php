@@ -291,35 +291,41 @@ class ZidProvider implements PlatformProvider
             'body_preview' => substr($bodyText, 0, 300),
         ]);
 
-        // 3. اعتراض خطأ 404 لعدم تطابق المنتجات أو القوائم الفرعية في زد وتحويله لرد ناجح فارغ
-        if ($statusCode === 404) {
-            if ($cleanPath === '/products' || $cleanPath === '/products/') {
-                return [
-                    'status' => 200,
-                    'body' => [
-                        'success' => true,
-                        'data' => [],
-                        'pagination' => [
-                            'currentPage' => 1,
-                            'totalPages' => 1,
-                            'totalCount' => 0,
-                            'perPage' => 15,
-                            'hasNext' => false,
-                            'hasPrev' => false,
-                        ],
+        // 3. اعتراض خطأ 404 لعدم وجود منتجات أو الأخطاء غير الناجحة للقوائم الفرعية الاختيارية في زد وتحويلها لرد ناجح فارغ
+        if ($statusCode === 404 && ($cleanPath === '/products' || $cleanPath === '/products/')) {
+            return [
+                'status' => 200,
+                'body' => [
+                    'success' => true,
+                    'data' => [],
+                    'pagination' => [
+                        'currentPage' => 1,
+                        'totalPages' => 1,
+                        'totalCount' => 0,
+                        'perPage' => 15,
+                        'hasNext' => false,
+                        'hasPrev' => false,
                     ],
-                ];
-            }
-            if (str_contains($cleanPath, '/images') || str_contains($cleanPath, '/custom_options') || str_contains($cleanPath, '/custom_user_input') || str_contains($cleanPath, '/attributes') || str_contains($cleanPath, '/badges') || str_contains($cleanPath, '/locations')) {
-                return [
-                    'status' => 200,
-                    'body' => [
-                        'success' => true,
-                        'data' => [],
-                        'results' => [],
-                    ],
-                ];
-            }
+                ],
+            ];
+        }
+
+        $isOptionalSubResource = str_contains($cleanPath, '/images')
+            || str_contains($cleanPath, '/custom_options')
+            || str_contains($cleanPath, '/custom_user_input')
+            || str_contains($cleanPath, '/attributes')
+            || str_contains($cleanPath, '/badges')
+            || str_contains($cleanPath, '/locations');
+
+        if (($statusCode >= 400 || $statusCode === 404) && $isOptionalSubResource) {
+            return [
+                'status' => 200,
+                'body' => [
+                    'success' => true,
+                    'data' => [],
+                    'results' => [],
+                ],
+            ];
         }
 
         if ($statusCode >= 200 && $statusCode < 300 && is_array($jsonData)) {
@@ -342,20 +348,13 @@ class ZidProvider implements PlatformProvider
 
         $entity = $parts[0];
 
-        // 1. Products Special Handling
+        // 1. Products Special Handling (مسارات المنتجات تقع مباشرة تحت /products/ في Zid API v1)
         if ($entity === 'products') {
-            if (count($parts) === 1) {
-                return '/managers/store/products/';
+            $finalPath = '/' . ltrim($path, '/');
+            if (! str_ends_with($finalPath, '/')) {
+                $finalPath .= '/';
             }
-
-            $id = $parts[1];
-            $rest = implode('/', array_slice($parts, 2));
-
-            if (empty($rest)) {
-                return "/managers/store/products/{$id}/view/";
-            }
-
-            return "/products/{$id}/{$rest}/";
+            return $finalPath;
         }
 
         // 2. Store-scoped Entities (categories, orders, customers, attributes, locations, badges)
