@@ -235,23 +235,40 @@ class ZidProvider implements PlatformProvider
         $timeout = in_array($methodUpper, ['POST', 'PUT', 'PATCH', 'DELETE']) ? 60 : 45;
         $client = $client->timeout($timeout);
 
-        if ($methodUpper === 'POST' && (request()->hasFile('image') || request()->hasFile('photo'))) {
-            $file = request()->file('image') ?? request()->file('photo');
-            $client = $client->attach('image', file_get_contents($file->getRealPath()), $file->getClientOriginalName());
-            $postFields = [];
-            if (request()->has('alt_text')) {
-                $postFields['alt_text'] = request()->input('alt_text');
+        // ─── Debug Log: رؤية ما سيُرسَل لـ Zid ──────────────────────────────────
+        $fullUrl = 'https://api.zid.sa/v1' . $targetPath;
+        $storeIdLog = $oauthToken->merchant ?? 'MISSING!';
+        $hasAuthToken = ! empty($oauthToken->authorization_token);
+        $hasManagerToken = ! empty($oauthToken->access_token);
+        \Log::debug("[Zid Proxy 🔵 Request] {$methodUpper} {$fullUrl}", [
+            'query_sent'       => $normalizedQuery,
+            'store_id'         => $storeIdLog,
+            'has_auth_token'   => $hasAuthToken,
+            'has_manager_token' => $hasManagerToken,
+        ]);
+
+        try {
+            if ($methodUpper === 'POST' && (request()->hasFile('image') || request()->hasFile('photo'))) {
+                $file = request()->file('image') ?? request()->file('photo');
+                $client = $client->attach('image', file_get_contents($file->getRealPath()), $file->getClientOriginalName());
+                $postFields = [];
+                if (request()->has('alt_text')) {
+                    $postFields['alt_text'] = request()->input('alt_text');
+                }
+                $response = $client->post($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $postFields);
+            } else {
+                $response = match ($methodUpper) {
+                    'GET'    => $client->get($targetPath, $normalizedQuery),
+                    'POST'   => $client->post($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
+                    'PUT'    => $client->put($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
+                    'PATCH'  => $client->patch($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
+                    'DELETE' => $client->delete($targetPath, $normalizedQuery),
+                    default  => null,
+                };
             }
-            $response = $client->post($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $postFields);
-        } else {
-            $response = match ($methodUpper) {
-                'GET' => $client->get($targetPath, $normalizedQuery),
-                'POST' => $client->post($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
-                'PUT' => $client->put($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
-                'PATCH' => $client->patch($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
-                'DELETE' => $client->delete($targetPath, $normalizedQuery),
-                default => null,
-            };
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            \Log::error("[Zid Proxy ❌ Connection Error] {$methodUpper} {$fullUrl}", ['error' => $e->getMessage()]);
+            return ['status' => 503, 'body' => ['success' => false, 'message' => 'تعذّر الاتصال بـ Zid API: ' . $e->getMessage()]];
         }
 
         if (! $response) {
@@ -262,8 +279,17 @@ class ZidProvider implements PlatformProvider
         }
 
         $statusCode = $response->status();
-        $bodyText = $response->body();
-        $jsonData = $response->json();
+        $bodyText   = $response->body();
+        $jsonData   = $response->json();
+
+        // ─── Debug Log: رؤية ما أرجعه Zid ──────────────────────────────────────
+        \Log::debug("[Zid Proxy 🟢 Response] {$methodUpper} {$fullUrl}", [
+            'status'     => $statusCode,
+            'body_keys'  => is_array($jsonData) ? array_keys($jsonData) : gettype($jsonData),
+            'count'      => $jsonData['count'] ?? 'N/A',
+            'results_ct' => isset($jsonData['results']) ? count($jsonData['results']) : 'no results key',
+            'body_preview' => substr($bodyText, 0, 300),
+        ]);
 
         // 3. اعتراض خطأ 404 لعدم تطابق المنتجات أو القوائم الفرعية في زد وتحويله لرد ناجح فارغ
         if ($statusCode === 404) {
@@ -414,21 +440,51 @@ class ZidProvider implements PlatformProvider
 
         $unifiedData = [];
         if (str_contains($pathLower, 'products')) {
-            $unifiedData = $rawData['results'] ?? ($rawData['products'] ?? []);
+            if (isset($rawData['products'])) {
+                if (is_array($rawData['products'])) {
+                    $unifiedData = $rawData['products']['results'] ?? (array_is_list($rawData['products']) ? $rawData['products'] : array_values($rawData['products']));
+                }
+            } elseif (isset($rawData['results']) && is_array($rawData['results'])) {
+                $unifiedData = $rawData['results'];
+            } elseif (isset($rawData['data']) && is_array($rawData['data'])) {
+                $unifiedData = $rawData['data']['products'] ?? ($rawData['data']['results'] ?? $rawData['data']);
+            }
         } elseif (str_contains($pathLower, 'categories')) {
-            $unifiedData = $rawData['categories'] ?? ($rawData['results'] ?? []);
+            if (isset($rawData['categories'])) {
+                $unifiedData = is_array($rawData['categories']) ? ($rawData['categories']['results'] ?? (array_is_list($rawData['categories']) ? $rawData['categories'] : array_values($rawData['categories']))) : [];
+            } else {
+                $unifiedData = $rawData['results'] ?? ($rawData['data'] ?? []);
+            }
         } elseif (str_contains($pathLower, 'orders')) {
-            $unifiedData = $rawData['orders'] ?? ($rawData['results'] ?? []);
+            if (isset($rawData['orders'])) {
+                $unifiedData = is_array($rawData['orders']) ? ($rawData['orders']['results'] ?? (array_is_list($rawData['orders']) ? $rawData['orders'] : array_values($rawData['orders']))) : [];
+            } else {
+                $unifiedData = $rawData['results'] ?? ($rawData['data'] ?? []);
+            }
         } elseif (str_contains($pathLower, 'customers')) {
-            $unifiedData = $rawData['customers'] ?? ($rawData['results'] ?? []);
+            if (isset($rawData['customers'])) {
+                $unifiedData = is_array($rawData['customers']) ? ($rawData['customers']['results'] ?? (array_is_list($rawData['customers']) ? $rawData['customers'] : array_values($rawData['customers']))) : [];
+            } else {
+                $unifiedData = $rawData['results'] ?? ($rawData['data'] ?? []);
+            }
         } else {
             $unifiedData = $rawData['data'] ?? ($rawData['results'] ?? ($rawData['categories'] ?? ($rawData['orders'] ?? ($rawData['customers'] ?? []))));
-            if (! is_array($unifiedData)) {
-                $unifiedData = [$rawData];
+        }
+
+        if (! is_array($unifiedData) || ! array_is_list($unifiedData)) {
+            if (is_array($unifiedData)) {
+                $unifiedData = array_values($unifiedData);
+            } else {
+                $unifiedData = [];
             }
         }
 
-        $totalCount = (int) ($rawData['count'] ?? ($rawData['total_categories_count'] ?? ($rawData['total_order_count'] ?? count($unifiedData))));
+        $totalCount = (int) (
+            $rawData['count'] ?? 
+            ($rawData['products']['count'] ?? 
+            ($rawData['total_categories_count'] ?? 
+            ($rawData['total_order_count'] ?? count($unifiedData))))
+        );
         $totalPages = max(1, (int) ceil($totalCount / $limit));
 
         $pagination = [
