@@ -13,10 +13,17 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // ─── Sanctum SPA Authentication ───────────────────────────────────────
+        $middleware->statefulApi();
+
+        // ─── Rate Limiting — تطبيق الحدود على API ─────────────────────────────
+        // الحدود مُعرَّفة في AppServiceProvider::boot() حيث يتوفر الـ Container
+        $middleware->throttleApi('api');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );
     })->create();
+
+

@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\OAuthController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\ProxyController;
+use App\Http\Controllers\Api\UploadController;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -11,6 +13,23 @@ use Illuminate\Support\Facades\Route;
 | API Routes for SPA / External Clients (Pure REST API)
 |--------------------------------------------------------------------------
 */
+
+// ❤️ Health Check — فحص جاهزية الخادم واتصال قاعدة البيانات
+Route::get('/health', function () {
+    try {
+        DB::connection()->getPdo();
+        $dbStatus = 'connected';
+    } catch (\Exception $e) {
+        $dbStatus = 'disconnected';
+    }
+
+    return response()->json([
+        'status'    => $dbStatus === 'connected' ? 'ok' : 'error',
+        'message'   => 'Laravel Backend is running',
+        'database'  => $dbStatus,
+        'timestamp' => now()->toISOString(),
+    ], $dbStatus === 'connected' ? 200 : 503);
+})->name('api.health');
 
 // 🟢 Public API Auth Endpoints (Dynamic OAuth for Salla, Zid, etc.)
 Route::prefix('auth')->group(function () {
@@ -39,4 +58,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // 👤 Merchant User Live Profile Endpoints
     Route::get('/user/profile', [ProfileController::class, 'user'])->name('api.user.profile');
     Route::get('/merchant/profile', [ProfileController::class, 'user'])->name('api.merchant.profile');
+
+    // 📸 Image Upload Endpoints (بديل عن Express /api/upload/*)
+    Route::post('/upload/zid/products/{productId}/images', [UploadController::class, 'uploadZidProductImage'])
+        ->name('api.upload.zid.product.image');
+    Route::post('/upload/salla/products/{productId}/images', [UploadController::class, 'uploadSallaProductImage'])
+        ->name('api.upload.salla.product.image');
 });

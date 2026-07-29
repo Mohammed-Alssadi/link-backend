@@ -244,14 +244,15 @@ class ZidProvider implements PlatformProvider
             }
             $response = $client->post($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $postFields);
         } else {
-        $response = match ($methodUpper) {
-            'GET' => $client->get($targetPath, $normalizedQuery),
-            'POST' => $client->post($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
-            'PUT' => $client->put($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
-            'PATCH' => $client->patch($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
-            'DELETE' => $client->delete($targetPath, $normalizedQuery),
-            default => null,
-        };
+            $response = match ($methodUpper) {
+                'GET' => $client->get($targetPath, $normalizedQuery),
+                'POST' => $client->post($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
+                'PUT' => $client->put($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
+                'PATCH' => $client->patch($targetPath . ($normalizedQuery ? '?' . http_build_query($normalizedQuery) : ''), $body),
+                'DELETE' => $client->delete($targetPath, $normalizedQuery),
+                default => null,
+            };
+        }
 
         if (! $response) {
             return [
@@ -264,10 +265,9 @@ class ZidProvider implements PlatformProvider
         $bodyText = $response->body();
         $jsonData = $response->json();
 
-        // 3. اعتراض خطأ 404 لعدم تطابق المنتجات في زد وتحويله لرد ناجح فارغ
-        if ($statusCode === 404 && str_contains($cleanPath, 'products')) {
-            $errDetail = strtolower(is_array($jsonData) ? ($jsonData['detail'] ?? $bodyText) : $bodyText);
-            if (str_contains($errDetail, 'no product matches') || str_contains($errDetail, 'not found') || str_contains($errDetail, 'صفحة غير صحيحة')) {
+        // 3. اعتراض خطأ 404 لعدم تطابق المنتجات أو القوائم الفرعية في زد وتحويله لرد ناجح فارغ
+        if ($statusCode === 404) {
+            if ($cleanPath === '/products' || $cleanPath === '/products/') {
                 return [
                     'status' => 200,
                     'body' => [
@@ -281,6 +281,16 @@ class ZidProvider implements PlatformProvider
                             'hasNext' => false,
                             'hasPrev' => false,
                         ],
+                    ],
+                ];
+            }
+            if (str_contains($cleanPath, '/images') || str_contains($cleanPath, '/custom_options') || str_contains($cleanPath, '/custom_user_input') || str_contains($cleanPath, '/attributes') || str_contains($cleanPath, '/badges') || str_contains($cleanPath, '/locations')) {
+                return [
+                    'status' => 200,
+                    'body' => [
+                        'success' => true,
+                        'data' => [],
+                        'results' => [],
                     ],
                 ];
             }
@@ -300,10 +310,31 @@ class ZidProvider implements PlatformProvider
     private function mapZidPath(string $path): string
     {
         $parts = array_values(array_filter(explode('/', $path), fn ($p) => $p !== ''));
-        $storeEntities = ['categories', 'orders', 'customers'];
+        if (empty($parts)) {
+            return '/';
+        }
 
-        if (count($parts) > 0 && in_array($parts[0], $storeEntities)) {
-            $entity = $parts[0];
+        $entity = $parts[0];
+
+        // 1. Products Special Handling
+        if ($entity === 'products') {
+            if (count($parts) === 1) {
+                return '/managers/store/products/';
+            }
+
+            $id = $parts[1];
+            $rest = implode('/', array_slice($parts, 2));
+
+            if (empty($rest)) {
+                return "/managers/store/products/{$id}/view/";
+            }
+
+            return "/products/{$id}/{$rest}/";
+        }
+
+        // 2. Store-scoped Entities (categories, orders, customers, attributes, locations, badges)
+        $storeEntities = ['categories', 'orders', 'customers', 'attributes', 'locations', 'badges'];
+        if (in_array($entity, $storeEntities)) {
             $newPath = "/managers/store/{$entity}";
 
             if (count($parts) > 1) {
@@ -434,6 +465,8 @@ class ZidProvider implements PlatformProvider
         $headers = [
             'Authorization'   => 'Bearer '.$accessToken,
             'X-Manager-Token' => $managerToken ?? '',
+            // Access-Token مرادف لـ X-Manager-Token — مطلوب من زد في عمليات الكتابة (POST/PUT/PATCH)
+            'Access-Token'    => $managerToken ?? '',
             // مطلوب من زد للحصول على صلاحيات المدير وبياناته الكاملة
             'Role'            => 'Manager',
             'Accept-Language' => 'ar',
