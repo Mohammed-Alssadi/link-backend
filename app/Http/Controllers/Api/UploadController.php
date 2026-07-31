@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\OauthToken;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class UploadController extends Controller
 {
@@ -70,11 +72,13 @@ class UploadController extends Controller
             $file->getClientOriginalName() ?: 'product-image.jpg'
         );
 
+        // ─── إرسال طلب رفع الصورة لزد ─────────────────────────────────────────────
+        $postData = [];
         if ($request->filled('alt_text')) {
-            $httpRequest = $httpRequest->attach('alt_text', $request->input('alt_text'), 'alt_text');
+            $postData['alt_text'] = $request->input('alt_text');
         }
 
-        $response = $httpRequest->post("https://api.zid.sa/v1/products/{$productId}/images/");
+        $response = $httpRequest->post("https://api.zid.sa/v1/products/{$productId}/images/", $postData);
 
         if ($response->successful()) {
             \Log::info("[Zid Image Upload ✅] Product: {$productId}, Status: {$response->status()}");
@@ -109,14 +113,15 @@ class UploadController extends Controller
         }
 
         // ─── التحقق من وجود الملف ────────────────────────────────────────────
-        if (! $request->hasFile('image')) {
+        $hasFile = $request->hasFile('image') || $request->hasFile('photo');
+        if (! $hasFile) {
             return response()->json([
                 'success' => false,
                 'message' => 'لم يتم إرسال أي ملف. يرجى إرسال الصورة في حقل "image"',
             ], 400);
         }
 
-        $file = $request->file('image');
+        $file = $request->file('image') ?? $request->file('photo');
 
         // ─── التحقق من نوع الملف ─────────────────────────────────────────────
         $allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
@@ -147,12 +152,12 @@ class UploadController extends Controller
             $file->getClientOriginalName() ?: 'product-image.jpg'
         );
 
-        // إضافة alt_text إذا أُرسل مع الطلب
+        $postData = [];
         if ($request->filled('alt_text')) {
-            $httpRequest = $httpRequest->attach('alt_text', $request->input('alt_text'), 'alt_text');
+            $postData['alt_text'] = $request->input('alt_text');
         }
 
-        $response = $httpRequest->post("https://api.salla.dev/admin/v2/products/{$productId}/images");
+        $response = $httpRequest->post("https://api.salla.dev/admin/v2/products/{$productId}/images", $postData);
 
         if ($response->successful()) {
             \Log::info("[Salla Image Upload ✅] Product: {$productId}, Status: {$response->status()}");

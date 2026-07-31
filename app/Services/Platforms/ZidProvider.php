@@ -317,7 +317,7 @@ class ZidProvider implements PlatformProvider
             || str_contains($cleanPath, '/badges')
             || str_contains($cleanPath, '/locations');
 
-        if (($statusCode >= 400 || $statusCode === 404) && $isOptionalSubResource) {
+        if ($methodUpper === 'GET' && ($statusCode >= 400 || $statusCode === 404) && $isOptionalSubResource) {
             return [
                 'status' => 200,
                 'body' => [
